@@ -130,7 +130,7 @@ func TestParseDiscovery(t *testing.T) {
 	}
 
 	liveIP := DiscoverEvents(event.Event{Kind: event.KindIP, Value: "10.0.0.7"}, hosts)
-	if len(liveIP) < 1 || liveIP[0].Kind != event.KindIP || liveIP[0].Value != "10.0.0.7" || liveIP[0].Meta["netblock"] != "" {
+	if len(liveIP) < 1 || liveIP[0].Kind != event.KindIP || liveIP[0].Value != "10.0.0.7" || liveIP[0].Meta["netblock"] != "" || !event.Live(liveIP[0]) {
 		t.Fatalf("live ip %+v", liveIP)
 	}
 

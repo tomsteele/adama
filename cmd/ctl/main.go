@@ -8,7 +8,9 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -32,6 +34,10 @@ func main() {
 				return nil, err
 			}
 			evs := parseHostnames(body, ev.Value)
+			evs, err = resolving(ctx, evs)
+			if err != nil {
+				return nil, err
+			}
 			slog.Info("ctl", "domain", ev.Value, "names", len(evs))
 			return evs, nil
 		},
@@ -62,4 +68,26 @@ func fetch(ctx context.Context, domain string) ([]byte, error) {
 		return nil, fmt.Errorf("ctl %d", resp.StatusCode)
 	}
 	return body, nil
+}
+
+func resolving(ctx context.Context, evs []event.Event) ([]event.Event, error) {
+	if len(evs) == 0 {
+		return evs, nil
+	}
+	var b strings.Builder
+	for _, ev := range evs {
+		b.WriteString(ev.Value)
+		b.WriteByte('\n')
+	}
+	cmd := exec.CommandContext(ctx, "dnsx", "-silent", "-a", "-aaaa")
+	cmd.Stdin = strings.NewReader(b.String())
+	out, err := cmd.Output()
+	if err != nil {
+		if x, ok := err.(*exec.ExitError); ok {
+			slog.Warn("dnsx exit", "err", err, "stderr", string(x.Stderr))
+		} else {
+			return nil, err
+		}
+	}
+	return keepResolved(evs, out), nil
 }

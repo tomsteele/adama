@@ -76,7 +76,7 @@ func TestFanoutAndDedup(t *testing.T) {
 	wg.Wait()
 }
 
-func TestOnlySource(t *testing.T) {
+func TestNeedLive(t *testing.T) {
 	url := startJS(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -86,10 +86,10 @@ func TestOnlySource(t *testing.T) {
 	go func() {
 		defer wg.Done()
 		_ = Run(ctx, Config{
-			Name:       "nmap-quick",
-			URL:        url,
-			Kinds:      []event.Kind{event.KindIP},
-			OnlySource: "nmap-discover",
+			Name:     "nmap-quick",
+			URL:      url,
+			Kinds:    []event.Kind{event.KindIP},
+			NeedLive: true,
 			Handle: func(_ context.Context, ev event.Event) ([]event.Event, error) {
 				n.Add(1)
 				return nil, nil
@@ -108,7 +108,7 @@ func TestOnlySource(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := b.Publish(ctx, event.Event{Kind: event.KindIP, Value: "1.2.3.4", Source: "nmap-discover"}); err != nil {
+	if err := b.Publish(ctx, event.Event{Kind: event.KindIP, Value: "1.2.3.4", Source: "http-probe", Meta: event.MarkLive(nil)}); err != nil {
 		t.Fatal(err)
 	}
 	wait(t, &n, 1)

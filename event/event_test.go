@@ -49,4 +49,7 @@ func TestCanon(t *testing.T) {
 	if err != nil || nb.Value != "10.1.0.0/16" {
 		t.Fatalf("canon netblock: %+v %v", nb, err)
 	}
+	if Live(Event{}) || !Live(Event{Meta: MarkLive(nil)}) {
+		t.Fatal("alive")
+	}
 }

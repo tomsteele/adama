@@ -39,8 +39,7 @@ FROM alpine:3.21 AS watch
 COPY --from=build /out/watch /usr/local/bin/watch
 ENTRYPOINT ["watch"]
 
-FROM alpine:3.21 AS ctl
-RUN apk add --no-cache ca-certificates
+FROM projectdiscovery/dnsx:latest AS ctl
 COPY --from=build /out/ctl /usr/local/bin/ctl
 ENTRYPOINT ["ctl"]
 

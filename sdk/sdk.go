@@ -88,12 +88,12 @@ func (b *Bus) Publish(ctx context.Context, ev event.Event) error {
 }
 
 type Config struct {
-	Name       string
-	URL        string
-	Kinds      []event.Kind
-	AckWait    time.Duration
-	OnlySource string // skip before dedup unless ev.Source matches
-	Handle     func(context.Context, event.Event) ([]event.Event, error)
+	Name     string
+	URL      string
+	Kinds    []event.Kind
+	AckWait  time.Duration
+	NeedLive bool // skip before dedup unless meta.alive=true
+	Handle   func(context.Context, event.Event) ([]event.Event, error)
 }
 
 func Run(ctx context.Context, cfg Config) error {
@@ -169,9 +169,9 @@ func (b *Bus) onMsg(ctx context.Context, cfg Config, msg jetstream.Msg) {
 		_ = msg.Ack()
 		return
 	}
-	if cfg.OnlySource != "" && ev.Source != cfg.OnlySource {
-		slog.Info("skip", "tool", cfg.Name, "kind", ev.Kind, "value", ev.Value, "reason", "source")
-		b.note("skip", cfg.Name, ev, "source", 0, 0)
+	if cfg.NeedLive && !event.Live(ev) {
+		slog.Info("skip", "tool", cfg.Name, "kind", ev.Kind, "value", ev.Value, "reason", "alive")
+		b.note("skip", cfg.Name, ev, "alive", 0, 0)
 		_ = msg.Ack()
 		return
 	}

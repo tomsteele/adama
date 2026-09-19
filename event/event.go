@@ -161,6 +161,16 @@ func (e Event) Canonical() (Event, error) {
 	return e, nil
 }
 
+func Live(ev Event) bool { return ev.Meta["alive"] == "true" }
+
+func MarkLive(meta map[string]string) map[string]string {
+	if meta == nil {
+		meta = map[string]string{}
+	}
+	meta["alive"] = "true"
+	return meta
+}
+
 func DedupKey(tool string, ev Event) string {
 	// KV keys cannot contain ':'
 	v := strings.ReplaceAll(ev.Value, ":", "_")

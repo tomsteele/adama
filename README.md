@@ -53,9 +53,9 @@ Every tool speaks the same envelope. Naabu, nmap, httpx, etc. should emit these 
 | Kind | Value | Typical meta |
 |---|---|---|
 | `domain` | apex for dictionary enum (`example.com`) | |
-| `fqdn` | a hostname | `parent`, `via`, `netblock` |
+| `fqdn` | a hostname | `alive` if a probe confirmed it; `parent`, `via` |
 | `netblock` | CIDR (`10.0.0.0/24`) | |
-| `ip` | address | `fqdns`, `netblock` |
+| `ip` | address | `alive` if a probe confirmed it; `fqdns`, `netblock` |
 | `port` | `host:port` | `host`, `port`, `fqdns`, `ips` |
 | `service` | `host:port/name` | **`name`, `product`, `version`**, `scripts` (id→output JSON) |
 | `url` | `http(s)://host` | `host`, `port`, `name`, `product` |
@@ -71,12 +71,12 @@ HTTP tools do **not** listen on raw `port`. `as-url` translates `service` names 
 | Tool | In | Out | Notes |
 |---|---|---|---|
 | `seed` | — | whatever you pass | PoC injector |
-| `nmap-discover` | `netblock`, `fqdn`, `ip` | `ip`, `fqdn` | YAML `-sn`; only live hosts; `-Pn` scanners wait for this |
+| `nmap-discover` | `netblock`, `fqdn`, `ip` | live `ip`, live `fqdn` | YAML `-sn`; sets `meta.alive` |
 | `dnsx` | `domain` | `fqdn` | dictionary (`wordlists/dns.txt`) |
-| `ctl` | `domain` | `fqdn` | Shodan CT `ctl.shodan.io` hostnames; no key |
-| `nmap-quick` | `ip`, `fqdn` from discover | `port` | YAML `--top-ports 1000`; `-Pn`; name pass keeps vhost SNI |
-| `nmap-http` | `ip`, `fqdn` from discover | `port` | YAML; fat HTTP/S list; same discover gate |
-| `nmap-full` | **`ip` from discover** | `port` | YAML `-sT -sU`; all TCP + common UDP; one scan per address |
+| `ctl` | `domain` | `fqdn` | Shodan CT hostnames, kept only if dnsx sees A/AAAA |
+| `nmap-quick` | live `ip`, live `fqdn` | `port` | YAML `--top-ports 1000`; `-Pn`; any tool that sets `alive` |
+| `nmap-http` | live `ip`, live `fqdn` | `port` | YAML; fat HTTP/S list; same live gate |
+| `nmap-full` | **live `ip`** | `port` | YAML `-sT -sU`; all TCP + common UDP; one scan per address |
 | `nmap-svc` | `port` | `service` | YAML; `-sV` plus `default,safe,discovery` scripts |
 | `tlsx` | `port` | `fqdn` | CN/SAN on every open port, not just 443 |
 | `as-url` | `service` | `url` | only if nmap says http(s) |
@@ -85,7 +85,7 @@ HTTP tools do **not** listen on raw `port`. `as-url` translates `service` names 
 | `nuclei-net` | `service` | `finding` | YAML; `-pt ssl,tcp,dns,javascript`; skips http(s) |
 | `report` | `screenshot`, `service`, `finding` | — | PoC sink |
 
-`nmap-quick`, `nmap-http`, and `nmap-full` are **separate consumers** and only run on events `nmap-discover` published (seed/ctl names do not wake `-Pn` scans). Full stays IP-only so ten vhosts share one `-sT -sU`. Quick and http also take each live name so SNI and `:8443` still happen per vhost. `tlsx` follows every open `port`.
+`-Pn` scanners (`nmap-quick`, `nmap-http`, `nmap-full`) only run on `ip`/`fqdn` with `meta.alive=true`. `nmap-discover` is the current producer; another liveness tool can emit the same shape. Seed/ctl names are not alive. Full stays IP-only so ten vhosts share one `-sT -sU`. Quick and http also take each live name so SNI and `:8443` still happen per vhost. `tlsx` follows every open `port`.
 
 ## Seeding (PoC only)
 

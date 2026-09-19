@@ -22,3 +22,11 @@ func TestParseHostnames(t *testing.T) {
 		}
 	}
 }
+
+func TestKeepResolved(t *testing.T) {
+	in := parseHostnames([]byte(`["www.example.com","dead.example.com"]`), "example.com")
+	got := keepResolved(in, []byte("www.example.com [1.2.3.4]\n"))
+	if len(got) != 1 || got[0].Value != "www.example.com" {
+		t.Fatalf("%+v", got)
+	}
+}

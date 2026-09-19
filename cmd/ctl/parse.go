@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"strings"
 
@@ -38,4 +39,24 @@ func parseHostnames(body []byte, domain string) []event.Event {
 		})
 	}
 	return evs
+}
+
+func keepResolved(evs []event.Event, stdout []byte) []event.Event {
+	live := map[string]bool{}
+	for _, line := range bytes.Split(stdout, []byte("\n")) {
+		s := strings.TrimSpace(string(line))
+		if i := strings.IndexAny(s, " \t["); i > 0 {
+			s = s[:i]
+		}
+		if n := event.CanonFQDN(s); n != "" {
+			live[n] = true
+		}
+	}
+	var out []event.Event
+	for _, ev := range evs {
+		if live[ev.Value] {
+			out = append(out, ev)
+		}
+	}
+	return out
 }

@@ -166,6 +166,7 @@ func DiscoverEvents(trigger event.Event, hosts []Host) []event.Event {
 		if trigger.Kind == event.KindNetblock {
 			meta["netblock"] = trigger.Value
 		}
+		meta = event.MarkLive(meta)
 		out = append(out, event.Event{Kind: event.KindIP, Value: h.IP, Meta: meta})
 		for _, n := range names {
 			out = append(out, event.Event{Kind: event.KindFQDN, Value: n, Meta: meta})
