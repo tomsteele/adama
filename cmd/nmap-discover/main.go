@@ -43,7 +43,7 @@ func main() {
 			if err != nil {
 				return nil, err
 			}
-			slog.Info("nmap-discover", "netblock", ev.Value, "generated_ips", len(hosts))
+			slog.Info("nmap-discover", "kind", ev.Kind, "value", ev.Value, "generated_ips", len(hosts))
 			return nmapx.DiscoverEvents(ev, hosts), nil
 		},
 	})

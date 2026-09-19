@@ -9,6 +9,7 @@ flowchart LR
   seed[seed] --> events[EVENTS]
   events --> nmapDiscover[nmap-discover]
   nmapDiscover -->|ip| events
+  nmapDiscover -->|fqdn| events
   events --> dnsx
   events --> ctl
   dnsx -->|fqdn| events
@@ -70,21 +71,21 @@ HTTP tools do **not** listen on raw `port`. `as-url` translates `service` names 
 | Tool | In | Out | Notes |
 |---|---|---|---|
 | `seed` | — | whatever you pass | PoC injector |
-| `nmap-discover` | `netblock` | `ip`, `fqdn` | YAML ping sweep (`-sn`); probes/rate in profile |
+| `nmap-discover` | `netblock`, `fqdn`, `ip` | `ip`, `fqdn` | YAML `-sn`; only live hosts; `-Pn` scanners wait for this |
 | `dnsx` | `domain` | `fqdn` | dictionary (`wordlists/dns.txt`) |
 | `ctl` | `domain` | `fqdn` | Shodan CT `ctl.shodan.io` hostnames; no key |
-| `nmap-quick` | `fqdn`, `ip` | `ip`, `port` | YAML; nmap `--top-ports 1000` |
-| `nmap-http` | `fqdn`, `ip` | `port` | YAML; fat HTTP/S port list (vhost `:8080` etc.) |
-| `nmap-full` | **`ip` only** | `port` | YAML `-sT -sU`; all TCP + common UDP; one scan per address |
+| `nmap-quick` | `ip`, `fqdn` from discover | `port` | YAML `--top-ports 1000`; `-Pn`; name pass keeps vhost SNI |
+| `nmap-http` | `ip`, `fqdn` from discover | `port` | YAML; fat HTTP/S list; same discover gate |
+| `nmap-full` | **`ip` from discover** | `port` | YAML `-sT -sU`; all TCP + common UDP; one scan per address |
 | `nmap-svc` | `port` | `service` | YAML; `-sV` plus `default,safe,discovery` scripts |
-| `tlsx` | `port` (443) | `fqdn` | CN/SAN names plus cert meta |
+| `tlsx` | `port` | `fqdn` | CN/SAN on every open port, not just 443 |
 | `as-url` | `service` | `url` | only if nmap says http(s) |
 | `httpx` | `url` | `screenshot` | YAML profile; png/jpeg on `data` plus title/status/tech/cdn/asn/jarm |
 | `nuclei` | `url` | `finding` | YAML; HTTP catalog minus dos/fuzz; OAST on |
 | `nuclei-net` | `service` | `finding` | YAML; `-pt ssl,tcp,dns,javascript`; skips http(s) |
 | `report` | `screenshot`, `service`, `finding` | — | PoC sink |
 
-`nmap-quick`, `nmap-http`, and `nmap-full` are **separate consumers** (`profiles/*.yaml`). Duplicate work is fine. Full scan is IP-only so ten vhosts on one host do not get ten `-p-` runs; they still each get quick (top-1000), the HTTP port sweep, and HTTP tools (SNI).
+`nmap-quick`, `nmap-http`, and `nmap-full` are **separate consumers** and only run on events `nmap-discover` published (seed/ctl names do not wake `-Pn` scans). Full stays IP-only so ten vhosts share one `-sT -sU`. Quick and http also take each live name so SNI and `:8443` still happen per vhost. `tlsx` follows every open `port`.
 
 ## Seeding (PoC only)
 

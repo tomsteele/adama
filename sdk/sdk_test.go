@@ -76,6 +76,47 @@ func TestFanoutAndDedup(t *testing.T) {
 	wg.Wait()
 }
 
+func TestOnlySource(t *testing.T) {
+	url := startJS(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	var n atomic.Int32
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		_ = Run(ctx, Config{
+			Name:       "nmap-quick",
+			URL:        url,
+			Kinds:      []event.Kind{event.KindIP},
+			OnlySource: "nmap-discover",
+			Handle: func(_ context.Context, ev event.Event) ([]event.Event, error) {
+				n.Add(1)
+				return nil, nil
+			},
+		})
+	}()
+	time.Sleep(400 * time.Millisecond)
+	if err := Seed(ctx, url, event.Event{Kind: event.KindIP, Value: "1.2.3.4"}); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(400 * time.Millisecond)
+	if n.Load() != 0 {
+		t.Fatal("seed must not scan")
+	}
+	b, err := Connect(ctx, url)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := b.Publish(ctx, event.Event{Kind: event.KindIP, Value: "1.2.3.4", Source: "nmap-discover"}); err != nil {
+		t.Fatal(err)
+	}
+	wait(t, &n, 1)
+	b.Close()
+	cancel()
+	wg.Wait()
+}
+
 func TestActivity(t *testing.T) {
 	url := startJS(t)
 	nc, err := nats.Connect(url)

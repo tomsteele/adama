@@ -154,18 +154,20 @@ func ParseDiscovery(data []byte) ([]Host, error) {
 func DiscoverEvents(trigger event.Event, hosts []Host) []event.Event {
 	var out []event.Event
 	for _, h := range hosts {
+		names := append([]string{}, h.Names...)
+		if trigger.Kind == event.KindFQDN {
+			names = append(names, trigger.Value)
+		}
+		names = uniqHosts(names, false)
 		meta := map[string]string{
-			"ips":      h.IP,
-			"fqdns":    event.JoinMetaList(h.Names),
-			"netblock": trigger.Value,
+			"ips":   h.IP,
+			"fqdns": event.JoinMetaList(names),
 		}
-		if trigger.Kind != event.KindIP || h.IP != trigger.Value {
-			out = append(out, event.Event{Kind: event.KindIP, Value: h.IP, Meta: meta})
+		if trigger.Kind == event.KindNetblock {
+			meta["netblock"] = trigger.Value
 		}
-		for _, n := range h.Names {
-			if trigger.Kind == event.KindFQDN && n == trigger.Value {
-				continue
-			}
+		out = append(out, event.Event{Kind: event.KindIP, Value: h.IP, Meta: meta})
+		for _, n := range names {
 			out = append(out, event.Event{Kind: event.KindFQDN, Value: n, Meta: meta})
 		}
 	}

@@ -1,6 +1,6 @@
-# fat HTTP/S port sweep on name and address so vhosts get :8080/:8443/etc, not just 80/443.
+# fat HTTP/S ports after discover. ip for the address; fqdn so late vhosts still get :8443 + SNI.
 name: nmap-http
-kinds: [fqdn, ip]
+kinds: [ip, fqdn]
 ack_wait: 10m
 nmap_args:
   - -Pn

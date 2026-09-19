@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"strconv"
 	"syscall"
 
 	"adama/event"
@@ -19,11 +20,15 @@ func main() {
 		Name:  "tlsx",
 		Kinds: []event.Kind{event.KindPort},
 		Handle: func(ctx context.Context, ev event.Event) ([]event.Event, error) {
-			if ev.Meta["port"] != "443" {
+			p, err := strconv.Atoi(ev.Meta["port"])
+			if err != nil {
 				return nil, nil
 			}
-			host := ev.Meta["host"]
-			out, err := exec.CommandContext(ctx, "tlsx", "-u", host+":443", "-san", "-cn", "-silent", "-nc", "-json").Output()
+			u, err := event.PortValue(ev.Meta["host"], p)
+			if err != nil {
+				return nil, nil
+			}
+			out, err := exec.CommandContext(ctx, "tlsx", "-u", u, "-san", "-cn", "-silent", "-nc", "-json").Output()
 			if err != nil {
 				if x, ok := err.(*exec.ExitError); ok {
 					slog.Warn("tlsx exit", "err", err, "stderr", string(x.Stderr))

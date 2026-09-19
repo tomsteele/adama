@@ -35,7 +35,7 @@ func parseTLSX(stdout []byte, trigger event.Event) []event.Event {
 		meta := map[string]string{
 			"via":         "tlsx",
 			"host":        host,
-			"port":        "443",
+			"port":        trigger.Meta["port"],
 			"fqdns":       trigger.Meta["fqdns"],
 			"ips":         trigger.Meta["ips"],
 			"netblock":    trigger.Meta["netblock"],

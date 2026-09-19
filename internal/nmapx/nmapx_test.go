@@ -128,6 +128,28 @@ func TestParseDiscovery(t *testing.T) {
 	if kinds["10.0.0.7"] != event.KindIP || kinds["router.local"] != event.KindFQDN {
 		t.Fatalf("%v", kinds)
 	}
+
+	liveIP := DiscoverEvents(event.Event{Kind: event.KindIP, Value: "10.0.0.7"}, hosts)
+	if len(liveIP) < 1 || liveIP[0].Kind != event.KindIP || liveIP[0].Value != "10.0.0.7" || liveIP[0].Meta["netblock"] != "" {
+		t.Fatalf("live ip %+v", liveIP)
+	}
+
+	liveName := DiscoverEvents(event.Event{Kind: event.KindFQDN, Value: "Www.Example.COM"}, hosts)
+	var gotIP, gotName bool
+	for _, ev := range liveName {
+		if ev.Meta["netblock"] != "" {
+			t.Fatalf("fqdn trigger netblock %+v", ev)
+		}
+		if ev.Kind == event.KindIP && ev.Value == "10.0.0.7" && ev.Meta["fqdns"] != "" {
+			gotIP = true
+		}
+		if ev.Kind == event.KindFQDN && ev.Value == "www.example.com" {
+			gotName = true
+		}
+	}
+	if !gotIP || !gotName {
+		t.Fatalf("live name %+v", liveName)
+	}
 }
 
 func TestExpandKeepsNetblock(t *testing.T) {

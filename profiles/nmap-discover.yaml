@@ -1,6 +1,6 @@
-# ping sweep. listing -PE/-PS/-PU replaces nmap's default ICMP+80/443 set.
+# liveness only. -Pn scanners wait for ips/fqdns we emit (dedup stops our own echo).
 name: nmap-discover
-kinds: [netblock]
+kinds: [netblock, fqdn, ip]
 ack_wait: 30m
 nmap_args:
   - --initial-rtt-timeout=250ms

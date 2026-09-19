@@ -1,5 +1,5 @@
-# nmap top-1000 on both identities. not -p-; that is nmap-full (ip only).
+# top-1000 after discover. ip once per address; fqdn again so each live vhost gets SNI ports.
 name: nmap-quick
-kinds: [fqdn, ip]
+kinds: [ip, fqdn]
 ack_wait: 10m
 nmap_args: ["-Pn", "-n", "--open", "--top-ports", "1000"]

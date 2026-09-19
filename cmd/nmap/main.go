@@ -26,9 +26,10 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	err = sdk.Run(ctx, sdk.Config{
-		Name:    p.Name,
-		Kinds:   p.EventKinds(),
-		AckWait: p.Ack(),
+		Name:       p.Name,
+		Kinds:      p.EventKinds(),
+		AckWait:    p.Ack(),
+		OnlySource: "nmap-discover",
 		Handle: func(ctx context.Context, ev event.Event) ([]event.Event, error) {
 			args := append(append([]string{}, p.NmapArgs...), "-oX", "-", ev.Value)
 			out, err := exec.CommandContext(ctx, "nmap", args...).Output()

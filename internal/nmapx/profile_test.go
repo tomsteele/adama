@@ -34,7 +34,7 @@ func TestLoadProfile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if d.Name != "nmap-discover" || len(d.Kinds) != 1 || d.Kinds[0] != "netblock" {
+	if d.Name != "nmap-discover" || len(d.Kinds) != 3 {
 		t.Fatalf("%+v", d)
 	}
 

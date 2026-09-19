@@ -1,4 +1,4 @@
-# Full TCP + common UDP on the IP only so 10 vhosts sharing one address do not get 10 scans.
+# Full TCP + common UDP on a live IP only (discover). Ten vhosts share one scan.
 name: nmap-full
 kinds: [ip]
 ack_wait: 2h
