@@ -22,8 +22,24 @@ func TestCanon(t *testing.T) {
 	if err != nil || ev.Value != "example.com:443" || ev.Meta["host"] != "example.com" {
 		t.Fatalf("canon port: %+v %v", ev, err)
 	}
-	if DedupKey("httpx", KindPort, "example.com:443") != "httpx/port/example.com_443" {
-		t.Fatalf("key: %s", DedupKey("httpx", KindPort, "example.com:443"))
+	if DedupKey("httpx", Event{Kind: KindPort, Value: "example.com:443"}) != "httpx/port/example.com_443" {
+		t.Fatalf("key: %s", DedupKey("httpx", Event{Kind: KindPort, Value: "example.com:443"}))
+	}
+	if DedupKey("httpx", Event{Kind: KindIP, Value: "1.2.3.4", Meta: map[string]string{"scope": "web"}}) != "httpx/ip/1.2.3.4/web" {
+		t.Fatal("scope key")
+	}
+	if !Allowed("nuclei", nil) || !Allowed("nuclei", map[string]string{}) {
+		t.Fatal("default allow")
+	}
+	if Allowed("nuclei", map[string]string{"deny": "nuclei,nmap-full"}) {
+		t.Fatal("deny")
+	}
+	if !Allowed("httpx", map[string]string{"allow": "httpx,nuclei"}) || Allowed("nmap-full", map[string]string{"allow": "httpx,nuclei"}) {
+		t.Fatal("allow")
+	}
+	child := InheritGate(Event{Meta: map[string]string{"deny": "nuclei", "scope": "web"}}, Event{Meta: map[string]string{"host": "x"}})
+	if child.Meta["deny"] != "nuclei" || child.Meta["scope"] != "web" || child.Meta["host"] != "x" {
+		t.Fatalf("%+v", child.Meta)
 	}
 	p, err := CanonPrefix("10.1.2.3/24")
 	if err != nil || p != "10.1.2.0/24" {

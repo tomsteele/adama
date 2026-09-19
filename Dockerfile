@@ -16,6 +16,8 @@ RUN CGO_ENABLED=0 go build -o /out/seed ./cmd/seed \
 
 FROM alpine:3.21 AS seed
 COPY --from=build /out/seed /usr/local/bin/seed
+COPY profiles /profiles
+ENV SEED_RUNS=/profiles/runs
 ENTRYPOINT ["seed"]
 
 FROM alpine:3.21 AS nmap

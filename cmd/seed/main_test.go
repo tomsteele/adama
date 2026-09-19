@@ -19,3 +19,10 @@ func TestParseArgs(t *testing.T) {
 		t.Fatal("want error")
 	}
 }
+
+func TestLoadRun(t *testing.T) {
+	p, err := loadRun("../../profiles/runs/web.yaml")
+	if err != nil || len(p.Allow) < 3 {
+		t.Fatalf("%+v %v", p, err)
+	}
+}

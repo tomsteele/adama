@@ -162,7 +162,12 @@ func (b *Bus) onMsg(ctx context.Context, cfg Config, msg jetstream.Msg) {
 		_ = msg.Ack()
 		return
 	}
-	key := event.DedupKey(cfg.Name, ev.Kind, ev.Value)
+	if !event.Allowed(cfg.Name, ev.Meta) {
+		slog.Info("skip", "tool", cfg.Name, "kind", ev.Kind, "value", ev.Value, "reason", "gate")
+		_ = msg.Ack()
+		return
+	}
+	key := event.DedupKey(cfg.Name, ev)
 	if _, err := b.KV.Create(ctx, key, []byte("1")); err != nil {
 		if errors.Is(err, jetstream.ErrKeyExists) {
 			slog.Info("skip", "tool", cfg.Name, "kind", ev.Kind, "value", ev.Value)
@@ -185,6 +190,7 @@ func (b *Bus) onMsg(ctx context.Context, cfg Config, msg jetstream.Msg) {
 	for _, child := range out {
 		child.Source = cfg.Name
 		child.ParentID = ev.ID
+		child = event.InheritGate(ev, child)
 		if err := b.Publish(ctx, child); err != nil {
 			slog.Error("publish", "err", err, "kind", child.Kind, "value", child.Value)
 			_ = b.KV.Delete(ctx, key)

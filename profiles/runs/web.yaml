@@ -1,0 +1,10 @@
+# optional seed kit: everyone still runs unless you pass --profile / --allow / --deny
+allow:
+  - nmap-quick
+  - nmap-http
+  - nmap-svc
+  - tlsx
+  - as-url
+  - httpx
+  - nuclei
+  - report

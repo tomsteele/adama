@@ -83,7 +83,14 @@ HTTP tools do **not** listen on raw `port`. `as-url` translates `service` names 
 
 `seed` is a demo injector. `seed domain example.com` feeds dnsx. `seed fqdn` is a single name (no dictionary). `seed netblock` is not exploded here — `nmap-discover` generates live IPs. `seed port 192.168.1.1:22` (or `seed 192.168.1.1:22`) skips discovery and goes straight to `nmap-svc`.
 
-In production, publish the same events yourself.
+By default every subscriber runs. Optionally restrict a seed (children inherit the same gate):
+
+```bash
+docker compose run --rm seed --deny nmap-full,nuclei ip 192.168.1.1
+docker compose run --rm seed --profile web --scope web1 ip 192.168.1.1
+```
+
+`--allow` / `--deny` are comma tool names. `--profile` loads `profiles/runs/<name>.yaml` (or a path). `--scope` is added to the dedup key so the same value can be seeded again under another kit. Empty allow/deny means all tools. In production, set the same `allow` / `deny` / `scope` meta yourself.
 
 ## Report (PoC only)
 

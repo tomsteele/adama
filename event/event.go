@@ -161,10 +161,45 @@ func (e Event) Canonical() (Event, error) {
 	return e, nil
 }
 
-func DedupKey(tool string, kind Kind, value string) string {
+func DedupKey(tool string, ev Event) string {
 	// KV keys cannot contain ':'
-	v := strings.ReplaceAll(value, ":", "_")
-	return tool + "/" + string(kind) + "/" + v
+	v := strings.ReplaceAll(ev.Value, ":", "_")
+	key := tool + "/" + string(ev.Kind) + "/" + v
+	if s := ev.Meta["scope"]; s != "" {
+		key += "/" + strings.ReplaceAll(s, ":", "_")
+	}
+	return key
+}
+
+// Allowed is true unless this event names a deny or a non-empty allow that omits the tool.
+func Allowed(tool string, meta map[string]string) bool {
+	for _, d := range SplitMetaList(meta["deny"]) {
+		if d == tool {
+			return false
+		}
+	}
+	allow := SplitMetaList(meta["allow"])
+	if len(allow) == 0 {
+		return true
+	}
+	for _, a := range allow {
+		if a == tool {
+			return true
+		}
+	}
+	return false
+}
+
+func InheritGate(parent, child Event) Event {
+	if child.Meta == nil {
+		child.Meta = map[string]string{}
+	}
+	for _, k := range []string{"allow", "deny", "scope", "profile"} {
+		if child.Meta[k] == "" && parent.Meta[k] != "" {
+			child.Meta[k] = parent.Meta[k]
+		}
+	}
+	return child
 }
 
 func SplitMetaList(s string) []string {
