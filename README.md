@@ -10,7 +10,9 @@ flowchart LR
   events --> nmapDiscover[nmap-discover]
   nmapDiscover -->|ip| events
   events --> dnsx
+  events --> ctl
   dnsx -->|fqdn| events
+  ctl -->|fqdn| events
   events --> nmapQuick[nmap-quick]
   events --> nmapHttp[nmap-http]
   events --> nmapFull[nmap-full]
@@ -70,6 +72,7 @@ HTTP tools do **not** listen on raw `port`. `as-url` translates `service` names 
 | `seed` | — | whatever you pass | PoC injector |
 | `nmap-discover` | `netblock` | `ip`, `fqdn` | YAML ping sweep (`-sn`); probes/rate in profile |
 | `dnsx` | `domain` | `fqdn` | dictionary (`wordlists/dns.txt`) |
+| `ctl` | `domain` | `fqdn` | Shodan CT `ctl.shodan.io` hostnames; no key |
 | `nmap-quick` | `fqdn`, `ip` | `ip`, `port` | YAML; nmap `--top-ports 1000` |
 | `nmap-http` | `fqdn`, `ip` | `port` | YAML; fat HTTP/S port list (vhost `:8080` etc.) |
 | `nmap-full` | **`ip` only** | `port` | YAML `-sT -sU`; all TCP + common UDP; one scan per address |
@@ -85,7 +88,7 @@ HTTP tools do **not** listen on raw `port`. `as-url` translates `service` names 
 
 ## Seeding (PoC only)
 
-`seed` is a demo injector. `seed domain example.com` feeds dnsx. `seed fqdn` is a single name (no dictionary). `seed netblock` is not exploded here — `nmap-discover` generates live IPs. `seed port 192.168.1.1:22` (or `seed 192.168.1.1:22`) skips discovery and goes straight to `nmap-svc`.
+`seed` is a demo injector. `seed domain example.com` feeds dnsx and `ctl`. `seed fqdn` is a single name (no dictionary). `seed netblock` is not exploded here — `nmap-discover` generates live IPs. `seed port 192.168.1.1:22` (or `seed 192.168.1.1:22`) skips discovery and goes straight to `nmap-svc`.
 
 By default every subscriber runs. Optionally restrict a seed (children inherit the same gate):
 

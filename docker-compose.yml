@@ -79,6 +79,15 @@ services:
     depends_on: [nats]
     restart: unless-stopped
 
+  ctl:
+    build:
+      context: .
+      target: ctl
+    environment:
+      NATS_URL: nats://nats:4222
+    depends_on: [nats]
+    restart: unless-stopped
+
   tlsx:
     build:
       context: .

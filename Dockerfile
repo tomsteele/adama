@@ -13,7 +13,8 @@ RUN CGO_ENABLED=0 go build -o /out/seed ./cmd/seed \
  && CGO_ENABLED=0 go build -o /out/nuclei ./cmd/nuclei \
  && CGO_ENABLED=0 go build -o /out/httpx ./cmd/httpx \
  && CGO_ENABLED=0 go build -o /out/report ./cmd/report \
- && CGO_ENABLED=0 go build -o /out/watch ./cmd/watch
+ && CGO_ENABLED=0 go build -o /out/watch ./cmd/watch \
+ && CGO_ENABLED=0 go build -o /out/ctl ./cmd/ctl
 
 FROM alpine:3.21 AS seed
 COPY --from=build /out/seed /usr/local/bin/seed
@@ -37,6 +38,11 @@ ENTRYPOINT ["report"]
 FROM alpine:3.21 AS watch
 COPY --from=build /out/watch /usr/local/bin/watch
 ENTRYPOINT ["watch"]
+
+FROM alpine:3.21 AS ctl
+RUN apk add --no-cache ca-certificates
+COPY --from=build /out/ctl /usr/local/bin/ctl
+ENTRYPOINT ["ctl"]
 
 FROM projectdiscovery/dnsx:latest AS dnsx
 COPY --from=build /out/dnsx /usr/local/bin/dnsx-worker
