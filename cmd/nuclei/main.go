@@ -9,16 +9,15 @@ import (
 	"syscall"
 
 	"adama/event"
-	"adama/internal/nmapx"
 	"adama/sdk"
 )
 
 func main() {
-	path := os.Getenv("NMAP_PROFILE")
+	path := os.Getenv("NUCLEI_PROFILE")
 	if path == "" {
-		path = "profiles/nmap-quick.yaml"
+		path = "profiles/nuclei.yaml"
 	}
-	p, err := nmapx.LoadProfile(path)
+	p, err := loadProfile(path)
 	if err != nil {
 		slog.Error("profile", "err", err)
 		os.Exit(2)
@@ -27,24 +26,21 @@ func main() {
 	defer stop()
 	err = sdk.Run(ctx, sdk.Config{
 		Name:    p.Name,
-		Kinds:   p.EventKinds(),
-		AckWait: p.Ack(),
+		Kinds:   p.kinds(),
+		AckWait: p.ackWait(),
 		Handle: func(ctx context.Context, ev event.Event) ([]event.Event, error) {
-			args := append(append([]string{}, p.NmapArgs...), "-oX", "-", ev.Value)
-			out, err := exec.CommandContext(ctx, "nmap", args...).Output()
+			args := append(append([]string{}, p.NucleiArgs...), "-u", ev.Value)
+			out, err := exec.CommandContext(ctx, "nuclei", args...).Output()
 			if err != nil {
 				if x, ok := err.(*exec.ExitError); ok {
-					slog.Warn("nmap exit", "tool", p.Name, "err", err, "stderr", string(x.Stderr))
+					slog.Warn("nuclei exit", "err", err, "stderr", string(x.Stderr))
 				} else {
 					return nil, err
 				}
 			}
-			addrs, ports, err := nmapx.ParseXML(out)
-			if err != nil {
-				return nil, err
-			}
-			slog.Info("nmap", "tool", p.Name, "host", ev.Value, "addrs", addrs, "ports", ports)
-			return nmapx.Expand(ev, addrs, ports), nil
+			evs := parseHits(out, ev)
+			slog.Info("nuclei", "url", ev.Value, "findings", len(evs))
+			return evs, nil
 		},
 	})
 	if err != nil && ctx.Err() == nil {

@@ -1,0 +1,10 @@
+www
+mail
+api
+dev
+staging
+admin
+app
+cdn
+vpn
+ns1

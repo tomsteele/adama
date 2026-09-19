@@ -14,16 +14,27 @@ import (
 )
 
 func main() {
+	path := os.Getenv("NMAP_PROFILE")
+	if path == "" {
+		path = "profiles/nmap-discover.yaml"
+	}
+	p, err := nmapx.LoadProfile(path)
+	if err != nil {
+		slog.Error("profile", "err", err)
+		os.Exit(2)
+	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	err := sdk.Run(ctx, sdk.Config{
-		Name:  "discover",
-		Kinds: []event.Kind{event.KindNetblock},
+	err = sdk.Run(ctx, sdk.Config{
+		Name:    p.Name,
+		Kinds:   p.EventKinds(),
+		AckWait: p.Ack(),
 		Handle: func(ctx context.Context, ev event.Event) ([]event.Event, error) {
-			out, err := exec.CommandContext(ctx, "nmap", "-sn", "-oX", "-", ev.Value).Output()
+			args := append(append([]string{}, p.NmapArgs...), "-oX", "-", ev.Value)
+			out, err := exec.CommandContext(ctx, "nmap", args...).Output()
 			if err != nil {
 				if x, ok := err.(*exec.ExitError); ok {
-					slog.Warn("discover exit", "err", err, "stderr", string(x.Stderr))
+					slog.Warn("nmap-discover exit", "tool", p.Name, "err", err, "stderr", string(x.Stderr))
 				} else {
 					return nil, err
 				}
@@ -32,7 +43,7 @@ func main() {
 			if err != nil {
 				return nil, err
 			}
-			slog.Info("discover", "netblock", ev.Value, "live", len(hosts))
+			slog.Info("nmap-discover", "netblock", ev.Value, "generated_ips", len(hosts))
 			return nmapx.DiscoverEvents(ev, hosts), nil
 		},
 	})

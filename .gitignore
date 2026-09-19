@@ -27,10 +27,16 @@ screenshots/*
 reports/*
 !reports/.gitkeep
 
-# gowitness leftovers
-gowitness.sqlite3
-gowitness.csv
-gowitness.jsonl
+# httpx / nuclei leftovers from host runs
+output/
+resume.cfg
+.nuclei-config/
+nuclei-templates/
+
+# Local nats / built binaries
+/store/
+/nats-data/
+/adama
 
 # Editor
 .idea/

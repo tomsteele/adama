@@ -1,0 +1,5 @@
+# Full TCP on the IP only so 10 vhosts sharing one address do not get 10 -p- scans.
+name: nmap-full
+kinds: [ip]
+ack_wait: 2h
+nmap_args: ["-Pn", "-n", "--open", "-p-"]

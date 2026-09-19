@@ -1,0 +1,26 @@
+name: httpx
+kinds: [url]
+ack_wait: 5m
+# screenshot + the usual httpx probes. drop/add flags here; worker only appends -u and -srd.
+httpx_args:
+  - -silent
+  - -json
+  - -ss
+  - -system-chrome
+  - -no-screenshot-full-page
+  - -ho
+  - --no-sandbox
+  - -ho
+  - --disable-dev-shm-usage
+  - -title
+  - -sc
+  - -td
+  - -server
+  - -ip
+  - -cname
+  - -location
+  - -favicon
+  - -jarm
+  - -asn
+  - -cdn
+  - -probe

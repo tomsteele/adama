@@ -13,11 +13,14 @@ type Kind string
 
 const (
 	KindFQDN       Kind = "fqdn"
+	KindDomain     Kind = "domain"
 	KindIP         Kind = "ip"
 	KindPort       Kind = "port"
 	KindScreenshot Kind = "screenshot"
 	KindService    Kind = "service"
 	KindNetblock   Kind = "netblock"
+	KindURL        Kind = "url"
+	KindFinding    Kind = "finding"
 )
 
 const SubjectPrefix = "adama.event."
@@ -114,7 +117,7 @@ func PortValue(host string, port int) (string, error) {
 
 func (e Event) Canonical() (Event, error) {
 	switch e.Kind {
-	case KindFQDN:
+	case KindFQDN, KindDomain:
 		e.Value = CanonFQDN(e.Value)
 		if e.Value == "" {
 			return e, fmt.Errorf("empty fqdn")
@@ -147,7 +150,7 @@ func (e Event) Canonical() (Event, error) {
 		h, _, _ := CanonHost(host)
 		e.Meta["host"] = h
 		e.Meta["port"] = strconv.Itoa(port)
-	case KindScreenshot, KindService:
+	case KindScreenshot, KindService, KindURL, KindFinding:
 		e.Value = strings.ToLower(strings.TrimSpace(e.Value))
 		if e.Value == "" {
 			return e, fmt.Errorf("empty %s", e.Kind)

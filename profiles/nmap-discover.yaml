@@ -1,0 +1,18 @@
+# ping sweep, not a port scan. listing -PE/-PS/-PA/-PU replaces nmap's default ICMP+80/443 set.
+name: nmap-discover
+kinds: [netblock]
+ack_wait: 30m
+nmap_args:
+  - -sn
+  - -n
+  - -PE
+  - -PP
+  - -PS22,80,443,445,3389,8080
+  - -PA80,443,3389
+  - -PU53,161
+  - --min-rate
+  - "200"
+  - --min-hostgroup
+  - "64"
+  - --max-retries
+  - "2"

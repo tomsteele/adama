@@ -50,10 +50,20 @@ func deliver(ctx context.Context, url, file string, ev event.Event) error {
 	return writeHTML(file)
 }
 
+func resetFile(file string) error {
+	if err := os.MkdirAll(filepath.Dir(file), 0o755); err != nil {
+		return err
+	}
+	if err := os.WriteFile(file, nil, 0o644); err != nil {
+		return err
+	}
+	return writeHTML(file)
+}
+
 func kinds() []event.Kind {
 	s := os.Getenv("REPORT_KINDS")
 	if s == "" {
-		return []event.Kind{event.KindScreenshot, event.KindService}
+		return []event.Kind{event.KindScreenshot, event.KindService, event.KindFinding}
 	}
 	var out []event.Kind
 	for _, p := range strings.Split(s, ",") {

@@ -17,6 +17,12 @@ func main() {
 	if file == "" {
 		file = "reports/events.jsonl"
 	}
+	if url == "" {
+		if err := resetFile(file); err != nil {
+			slog.Error("reset", "err", err)
+			os.Exit(2)
+		}
+	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	err := sdk.Run(ctx, sdk.Config{

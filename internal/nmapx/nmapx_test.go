@@ -1,10 +1,20 @@
 package nmapx
 
 import (
+	"strings"
 	"testing"
 
 	"adama/event"
 )
+
+func containsAll(s string, parts ...string) bool {
+	for _, p := range parts {
+		if !strings.Contains(s, p) {
+			return false
+		}
+	}
+	return true
+}
 
 func TestParseXML(t *testing.T) {
 	const xml = `<?xml version="1.0"?>
@@ -15,6 +25,8 @@ func TestParseXML(t *testing.T) {
       <port protocol="tcp" portid="80"><state state="open"/></port>
       <port protocol="tcp" portid="443"><state state="open"/></port>
       <port protocol="tcp" portid="22"><state state="closed"/></port>
+      <port protocol="tcp" portid="8080"><state state="filtered"/></port>
+      <port protocol="tcp" portid="8443"><state state="open|filtered"/></port>
     </ports>
   </host>
 </nmaprun>`
@@ -71,12 +83,15 @@ func TestParseServices(t *testing.T) {
 	if err != nil || len(svcs) != 1 {
 		t.Fatalf("%v %+v", err, svcs)
 	}
-	if svcs[0].Name != "https" || svcs[0].Product != "Vercel" || len(svcs[0].Scripts) != 2 {
+	if svcs[0].Name != "https" || svcs[0].Product != "Vercel" || svcs[0].Scripts["ssl-cert"] != "x" || svcs[0].Scripts["http-title"] != "y" {
 		t.Fatalf("%+v", svcs[0])
 	}
 	got := ServiceEvents(event.Event{Kind: event.KindPort, Value: "example.com:443", Meta: map[string]string{"host": "example.com", "port": "443"}}, svcs)
 	if len(got) != 1 || got[0].Kind != event.KindService || got[0].Value != "example.com:443/https" {
 		t.Fatalf("%+v", got)
+	}
+	if got[0].Meta["scripts"] == "" || !containsAll(got[0].Meta["scripts"], "ssl-cert", "http-title", `"x"`) {
+		t.Fatalf("scripts %s", got[0].Meta["scripts"])
 	}
 }
 

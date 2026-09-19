@@ -35,9 +35,15 @@ dt{font-weight:600} dd{margin:0 0 .4rem 0}
 {{range .}}
 <section>
 <h2>{{.Kind}} {{.Value}}</h2>
-<p>{{.Source}} · {{.Observed.UTC.Format "2006-01-02 15:04:05"}}Z</p>
+<p>{{.Source}} · {{.Observed.UTC.Format "2006-01-02 15:04:05"}}Z
+{{if and (eq .Kind "service") .Meta.product}} — {{.Meta.product}}{{if .Meta.version}} {{.Meta.version}}{{end}}{{end}}
+{{if and (eq .Kind "finding") .Meta.severity}} — {{.Meta.severity}}{{end}}</p>
 {{if eq .Kind "screenshot"}}
+  {{if .Meta.title}}<p>{{.Meta.title}}{{if .Meta.status_code}} — {{.Meta.status_code}}{{end}}{{if .Meta.webserver}} · {{.Meta.webserver}}{{end}}</p>{{end}}
   {{if .Data}}<p><img src="{{img .MediaType .Data}}" alt="{{.Value}}"></p>{{else}}<p>no image</p>{{end}}
+  <dl>
+  {{range $k, $v := .Meta}}<dt>{{$k}}</dt><dd>{{$v}}</dd>{{end}}
+  </dl>
 {{else}}
 <dl>
 {{range $k, $v := .Meta}}<dt>{{$k}}</dt><dd>{{$v}}</dd>{{end}}

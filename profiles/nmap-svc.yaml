@@ -1,0 +1,5 @@
+# -sC is default-only; safe+discovery is where ssh2-enum-algos and most useful NSE live.
+name: nmap-svc
+kinds: [port]
+ack_wait: 10m
+nmap_args: ["-Pn", "-n", "--open", "-sV", "--script", "default,safe,discovery"]

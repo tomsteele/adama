@@ -3,6 +3,10 @@ package event
 import "testing"
 
 func TestCanon(t *testing.T) {
+	d, err := (Event{Kind: KindDomain, Value: "Example.COM."}).Canonical()
+	if err != nil || d.Value != "example.com" {
+		t.Fatalf("domain: %+v %v", d, err)
+	}
 	if g := CanonFQDN("Example.COM."); g != "example.com" {
 		t.Fatalf("fqdn: %q", g)
 	}
@@ -18,8 +22,8 @@ func TestCanon(t *testing.T) {
 	if err != nil || ev.Value != "example.com:443" || ev.Meta["host"] != "example.com" {
 		t.Fatalf("canon port: %+v %v", ev, err)
 	}
-	if DedupKey("gowitness", KindPort, "example.com:443") != "gowitness/port/example.com_443" {
-		t.Fatalf("key: %s", DedupKey("gowitness", KindPort, "example.com:443"))
+	if DedupKey("httpx", KindPort, "example.com:443") != "httpx/port/example.com_443" {
+		t.Fatalf("key: %s", DedupKey("httpx", KindPort, "example.com:443"))
 	}
 	p, err := CanonPrefix("10.1.2.3/24")
 	if err != nil || p != "10.1.2.0/24" {

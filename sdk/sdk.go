@@ -88,10 +88,11 @@ func (b *Bus) Publish(ctx context.Context, ev event.Event) error {
 }
 
 type Config struct {
-	Name   string
-	URL    string
-	Kinds  []event.Kind
-	Handle func(context.Context, event.Event) ([]event.Event, error)
+	Name    string
+	URL     string
+	Kinds   []event.Kind
+	AckWait time.Duration
+	Handle  func(context.Context, event.Event) ([]event.Event, error)
 }
 
 func Run(ctx context.Context, cfg Config) error {
@@ -108,12 +109,16 @@ func Run(ctx context.Context, cfg Config) error {
 	for i, k := range cfg.Kinds {
 		subjects[i] = event.Subject(k)
 	}
+	ackWait := cfg.AckWait
+	if ackWait == 0 {
+		ackWait = 5 * time.Minute
+	}
 	_, err = b.JS.CreateConsumer(ctx, StreamName, jetstream.ConsumerConfig{
 		Durable:        cfg.Name,
 		FilterSubjects: subjects,
 		AckPolicy:      jetstream.AckExplicitPolicy,
 		DeliverPolicy:  jetstream.DeliverNewPolicy,
-		AckWait:        5 * time.Minute,
+		AckWait:        ackWait,
 		MaxDeliver:     5,
 		MaxAckPending:  1,
 	})

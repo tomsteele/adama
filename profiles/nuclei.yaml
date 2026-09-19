@@ -1,0 +1,26 @@
+name: nuclei
+kinds: [url]
+ack_wait: 20m
+# worker only appends -u. full catalog on a live URL (not -as).
+# drop dos/fuzz. keep interactsh (do not add -ni). add -headless if chrome exists.
+# swap in -as for a faster wappalyzer-tagged pass.
+nuclei_args:
+  - -silent
+  - -jsonl
+  - -omit-template
+  - -follow-redirects
+  - -ss
+  - host-spray
+  - -etags
+  - dos,fuzz
+  - -rl
+  - "150"
+  - -c
+  - "25"
+  - -retries
+  - "2"
+  - -timeout
+  - "10"
+  - -max-time
+  - 15m
+  - -duc

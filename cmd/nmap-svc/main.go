@@ -14,17 +14,28 @@ import (
 )
 
 func main() {
+	path := os.Getenv("NMAP_PROFILE")
+	if path == "" {
+		path = "profiles/nmap-svc.yaml"
+	}
+	p, err := nmapx.LoadProfile(path)
+	if err != nil {
+		slog.Error("profile", "err", err)
+		os.Exit(2)
+	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	err := sdk.Run(ctx, sdk.Config{
-		Name:  "nmap-svc",
-		Kinds: []event.Kind{event.KindPort},
+	err = sdk.Run(ctx, sdk.Config{
+		Name:    p.Name,
+		Kinds:   p.EventKinds(),
+		AckWait: p.Ack(),
 		Handle: func(ctx context.Context, ev event.Event) ([]event.Event, error) {
 			host, port := ev.Meta["host"], ev.Meta["port"]
 			if host == "" || port == "" {
 				return nil, nil
 			}
-			out, err := exec.CommandContext(ctx, "nmap", "-Pn", "-n", "-sV", "-sC", "-p", port, "-oX", "-", host).Output()
+			args := append(append([]string{}, p.NmapArgs...), "-p", port, "-oX", "-", host)
+			out, err := exec.CommandContext(ctx, "nmap", args...).Output()
 			if err != nil {
 				if x, ok := err.(*exec.ExitError); ok {
 					slog.Warn("nmap-svc exit", "err", err, "stderr", string(x.Stderr))
@@ -36,7 +47,7 @@ func main() {
 			if err != nil {
 				return nil, err
 			}
-			slog.Info("nmap-svc", "target", ev.Value, "services", len(svcs))
+			slog.Info("nmap-svc", "target", ev.Value, "services", len(svcs), "scripts", scriptCount(svcs))
 			return nmapx.ServiceEvents(ev, svcs), nil
 		},
 	})
@@ -44,4 +55,12 @@ func main() {
 		slog.Error("run", "err", err)
 		os.Exit(1)
 	}
+}
+
+func scriptCount(svcs []nmapx.Svc) int {
+	n := 0
+	for _, s := range svcs {
+		n += len(s.Scripts)
+	}
+	return n
 }

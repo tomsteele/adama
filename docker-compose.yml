@@ -1,30 +1,52 @@
 services:
   nats:
     image: nats:2-alpine
-    command: ["-js", "-m", "8222", "--max_payload", "8388608"]
+    command: ["-c", "/etc/nats/nats.conf"]
+    volumes:
+      - ./nats.conf:/etc/nats/nats.conf:ro
     ports:
       - "4222:4222"
       - "8222:8222"
 
-  nmap:
+  nmap-discover:
     build:
       context: .
       target: nmap
+    entrypoint: ["nmap-discover-worker"]
     environment:
       NATS_URL: nats://nats:4222
-    depends_on:
-      - nats
+      NMAP_PROFILE: /profiles/nmap-discover.yaml
+    depends_on: [nats]
     restart: unless-stopped
 
-  discover:
+  nmap-quick:
     build:
       context: .
       target: nmap
-    entrypoint: ["discover-worker"]
     environment:
       NATS_URL: nats://nats:4222
-    depends_on:
-      - nats
+      NMAP_PROFILE: /profiles/nmap-quick.yaml
+    depends_on: [nats]
+    restart: unless-stopped
+
+  nmap-http:
+    build:
+      context: .
+      target: nmap
+    environment:
+      NATS_URL: nats://nats:4222
+      NMAP_PROFILE: /profiles/nmap-http.yaml
+    depends_on: [nats]
+    restart: unless-stopped
+
+  nmap-full:
+    build:
+      context: .
+      target: nmap
+    environment:
+      NATS_URL: nats://nats:4222
+      NMAP_PROFILE: /profiles/nmap-full.yaml
+    depends_on: [nats]
     restart: unless-stopped
 
   nmap-svc:
@@ -34,21 +56,59 @@ services:
     entrypoint: ["nmap-svc-worker"]
     environment:
       NATS_URL: nats://nats:4222
-    depends_on:
-      - nats
+      NMAP_PROFILE: /profiles/nmap-svc.yaml
+    depends_on: [nats]
     restart: unless-stopped
 
-  gowitness:
+  as-url:
     build:
       context: .
-      target: gowitness
+      target: nmap
+    entrypoint: ["asurl-worker"]
     environment:
       NATS_URL: nats://nats:4222
+    depends_on: [nats]
+    restart: unless-stopped
+
+  dnsx:
+    build:
+      context: .
+      target: dnsx
+    environment:
+      NATS_URL: nats://nats:4222
+    depends_on: [nats]
+    restart: unless-stopped
+
+  tlsx:
+    build:
+      context: .
+      target: tlsx
+    environment:
+      NATS_URL: nats://nats:4222
+    depends_on: [nats]
+    restart: unless-stopped
+
+  httpx:
+    build:
+      context: .
+      target: httpx
+    environment:
+      NATS_URL: nats://nats:4222
+      HTTPX_PROFILE: /profiles/httpx.yaml
       SCREENSHOT_DIR: /screenshots
     volumes:
       - ./screenshots:/screenshots
-    depends_on:
-      - nats
+    depends_on: [nats]
+    restart: unless-stopped
+
+  nuclei:
+    build:
+      context: .
+      target: nuclei
+    environment:
+      NATS_URL: nats://nats:4222
+      NUCLEI_PROFILE: /profiles/nuclei.yaml
+    depends_on: [nats]
     restart: unless-stopped
 
   report:
@@ -58,11 +118,9 @@ services:
     environment:
       NATS_URL: nats://nats:4222
       REPORT_FILE: /reports/events.jsonl
-      # REPORT_URL: https://example.invalid/ingest
     volumes:
       - ./reports:/reports
-    depends_on:
-      - nats
+    depends_on: [nats]
     restart: unless-stopped
 
   seed:
@@ -71,8 +129,7 @@ services:
       target: seed
     environment:
       NATS_URL: nats://nats:4222
-    depends_on:
-      - nats
+    depends_on: [nats]
     profiles: ["seed"]
 
   dev:
@@ -83,5 +140,4 @@ services:
     environment:
       NATS_URL: nats://nats:4222
     command: sleep infinity
-    depends_on:
-      - nats
+    depends_on: [nats]

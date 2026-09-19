@@ -45,6 +45,25 @@ func TestDeliverFile(t *testing.T) {
 	}
 }
 
+func TestResetFile(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "events.jsonl")
+	if err := os.WriteFile(p, []byte("{\"kind\":\"port\"}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := resetFile(p); err != nil {
+		t.Fatal(err)
+	}
+	b, err := os.ReadFile(p)
+	if err != nil || len(b) != 0 {
+		t.Fatalf("jsonl %q %v", b, err)
+	}
+	html, err := os.ReadFile(filepath.Join(dir, "report.html"))
+	if err != nil || !strings.Contains(string(html), "no events yet") {
+		t.Fatalf("html %s %v", html, err)
+	}
+}
+
 func TestWriteHTMLScreenshot(t *testing.T) {
 	dir := t.TempDir()
 	p := filepath.Join(dir, "events.jsonl")

@@ -1,0 +1,5 @@
+# nmap top-1000 on both identities. not -p-; that is nmap-full (ip only).
+name: nmap-quick
+kinds: [fqdn, ip]
+ack_wait: 10m
+nmap_args: ["-Pn", "-n", "--open", "--top-ports", "1000"]

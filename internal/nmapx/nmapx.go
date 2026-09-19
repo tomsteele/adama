@@ -1,6 +1,7 @@
 package nmapx
 
 import (
+	"encoding/json"
 	"encoding/xml"
 	"strconv"
 
@@ -12,10 +13,11 @@ type nmapRun struct {
 }
 
 type nmapHost struct {
-	Status    nmapStatus    `xml:"status"`
-	Addresses []nmapAddr    `xml:"address"`
-	Hostnames nmapHostnames `xml:"hostnames"`
-	Ports     nmapPorts     `xml:"ports"`
+	Status      nmapStatus    `xml:"status"`
+	Addresses   []nmapAddr    `xml:"address"`
+	Hostnames   nmapHostnames `xml:"hostnames"`
+	Ports       nmapPorts     `xml:"ports"`
+	HostScripts []nmapScript  `xml:"hostscript>script"`
 }
 
 type nmapStatus struct {
@@ -55,7 +57,8 @@ type nmapService struct {
 }
 
 type nmapScript struct {
-	ID string `xml:"id,attr"`
+	ID     string `xml:"id,attr"`
+	Output string `xml:"output,attr"`
 }
 
 type nmapState struct {
@@ -175,7 +178,7 @@ type Svc struct {
 	Product string
 	Version string
 	Extra   string
-	Scripts []string
+	Scripts map[string]string
 }
 
 func ParseServices(data []byte) ([]Svc, error) {
@@ -185,6 +188,12 @@ func ParseServices(data []byte) ([]Svc, error) {
 	}
 	var out []Svc
 	for _, h := range run.Hosts {
+		hostScripts := map[string]string{}
+		for _, sc := range h.HostScripts {
+			if sc.ID != "" {
+				hostScripts[sc.ID] = sc.Output
+			}
+		}
 		for _, p := range h.Ports.Ports {
 			if p.State.State != "open" {
 				continue
@@ -193,13 +202,16 @@ func ParseServices(data []byte) ([]Svc, error) {
 			if err != nil {
 				continue
 			}
-			s := Svc{Port: n, Name: p.Service.Name, Product: p.Service.Product, Version: p.Service.Version, Extra: p.Service.Extra}
+			s := Svc{Port: n, Name: p.Service.Name, Product: p.Service.Product, Version: p.Service.Version, Extra: p.Service.Extra, Scripts: map[string]string{}}
 			if s.Name == "" {
 				s.Name = "unknown"
 			}
+			for id, out := range hostScripts {
+				s.Scripts[id] = out
+			}
 			for _, sc := range p.Scripts {
 				if sc.ID != "" {
-					s.Scripts = append(s.Scripts, sc.ID)
+					s.Scripts[sc.ID] = sc.Output
 				}
 			}
 			out = append(out, s)
@@ -224,8 +236,12 @@ func ServiceEvents(trigger event.Event, svcs []Svc) []event.Event {
 				"product":  s.Product,
 				"version":  s.Version,
 				"extra":    s.Extra,
-				"scripts":  event.JoinMetaList(s.Scripts),
 			},
+		}
+		if len(s.Scripts) > 0 {
+			if b, err := json.Marshal(s.Scripts); err == nil {
+				ev.Meta["scripts"] = string(b)
+			}
 		}
 		out = append(out, ev)
 	}
