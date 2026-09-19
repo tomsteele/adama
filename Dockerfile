@@ -12,7 +12,8 @@ RUN CGO_ENABLED=0 go build -o /out/seed ./cmd/seed \
  && CGO_ENABLED=0 go build -o /out/tlsx ./cmd/tlsx \
  && CGO_ENABLED=0 go build -o /out/nuclei ./cmd/nuclei \
  && CGO_ENABLED=0 go build -o /out/httpx ./cmd/httpx \
- && CGO_ENABLED=0 go build -o /out/report ./cmd/report
+ && CGO_ENABLED=0 go build -o /out/report ./cmd/report \
+ && CGO_ENABLED=0 go build -o /out/watch ./cmd/watch
 
 FROM alpine:3.21 AS seed
 COPY --from=build /out/seed /usr/local/bin/seed
@@ -32,6 +33,10 @@ ENTRYPOINT ["nmap-worker"]
 FROM alpine:3.21 AS report
 COPY --from=build /out/report /usr/local/bin/report
 ENTRYPOINT ["report"]
+
+FROM alpine:3.21 AS watch
+COPY --from=build /out/watch /usr/local/bin/watch
+ENTRYPOINT ["watch"]
 
 FROM projectdiscovery/dnsx:latest AS dnsx
 COPY --from=build /out/dnsx /usr/local/bin/dnsx-worker

@@ -164,6 +164,7 @@ func (b *Bus) onMsg(ctx context.Context, cfg Config, msg jetstream.Msg) {
 	}
 	if !event.Allowed(cfg.Name, ev.Meta) {
 		slog.Info("skip", "tool", cfg.Name, "kind", ev.Kind, "value", ev.Value, "reason", "gate")
+		b.note("skip", cfg.Name, ev, "gate", 0, 0)
 		_ = msg.Ack()
 		return
 	}
@@ -171,6 +172,7 @@ func (b *Bus) onMsg(ctx context.Context, cfg Config, msg jetstream.Msg) {
 	if _, err := b.KV.Create(ctx, key, []byte("1")); err != nil {
 		if errors.Is(err, jetstream.ErrKeyExists) {
 			slog.Info("skip", "tool", cfg.Name, "kind", ev.Kind, "value", ev.Value)
+			b.note("skip", cfg.Name, ev, "dedup", 0, 0)
 			_ = msg.Ack()
 			return
 		}
@@ -180,9 +182,12 @@ func (b *Bus) onMsg(ctx context.Context, cfg Config, msg jetstream.Msg) {
 	}
 
 	slog.Info("handle", "tool", cfg.Name, "kind", ev.Kind, "value", ev.Value)
+	t0 := time.Now()
+	b.note("start", cfg.Name, ev, "", 0, 0)
 	out, err := cfg.Handle(ctx, ev)
 	if err != nil {
 		slog.Error("handle", "tool", cfg.Name, "err", err)
+		b.note("error", cfg.Name, ev, err.Error(), 0, time.Since(t0))
 		_ = b.KV.Delete(ctx, key)
 		_ = msg.Nak()
 		return
@@ -193,13 +198,38 @@ func (b *Bus) onMsg(ctx context.Context, cfg Config, msg jetstream.Msg) {
 		child = event.InheritGate(ev, child)
 		if err := b.Publish(ctx, child); err != nil {
 			slog.Error("publish", "err", err, "kind", child.Kind, "value", child.Value)
+			b.note("error", cfg.Name, ev, err.Error(), 0, time.Since(t0))
 			_ = b.KV.Delete(ctx, key)
 			_ = msg.Nak()
 			return
 		}
 		slog.Info("emit", "tool", cfg.Name, "kind", child.Kind, "value", child.Value)
 	}
+	b.note("done", cfg.Name, ev, "", len(out), time.Since(t0))
 	_ = msg.Ack()
+}
+
+func (b *Bus) note(action, tool string, ev event.Event, reason string, emitted int, elapsed time.Duration) {
+	a := event.Activity{
+		Action:  action,
+		Tool:    tool,
+		Kind:    ev.Kind,
+		Value:   ev.Value,
+		Reason:  reason,
+		Emitted: emitted,
+		At:      time.Now().UTC(),
+	}
+	if ev.Meta != nil {
+		a.Scope = ev.Meta["scope"]
+	}
+	if elapsed > 0 {
+		a.Elapsed = elapsed.Round(time.Millisecond).String()
+	}
+	raw, err := a.Bytes()
+	if err != nil {
+		return
+	}
+	_ = b.nc.Publish(event.ActivitySubject, raw)
 }
 
 func Seed(ctx context.Context, url string, ev event.Event) error {

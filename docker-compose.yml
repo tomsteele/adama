@@ -123,6 +123,18 @@ services:
     depends_on: [nats]
     restart: unless-stopped
 
+  watch:
+    build:
+      context: .
+      target: watch
+    environment:
+      NATS_URL: nats://nats:4222
+      WATCH_ADDR: :8080
+    ports:
+      - "8080:8080"
+    depends_on: [nats]
+    restart: unless-stopped
+
   seed:
     build:
       context: .

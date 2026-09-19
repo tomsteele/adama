@@ -35,10 +35,11 @@ docker compose up -d --build
 docker compose run --rm seed domain example.com
 # or: seed fqdn / seed ip / seed netblock / seed port 192.168.1.1:22
 # or: seed 192.168.1.1:22   (inferred as port)
-docker compose logs -f nmap-svc httpx nuclei report
+docker compose logs -f watch
+# live: http://127.0.0.1:8080
 ```
 
-Scan only hosts you are allowed to touch. Tool flags live in `profiles/*.yaml` (`NMAP_PROFILE`, `HTTPX_PROFILE`, `NUCLEI_PROFILE`). NATS payload is 8MB (`nats.conf`). Progress is worker logs, `reports/report.html`, and `http://127.0.0.1:8222`.
+Scan only hosts you are allowed to touch. Tool flags live in `profiles/*.yaml` (`NMAP_PROFILE`, `HTTPX_PROFILE`, `NUCLEI_PROFILE`). NATS payload is 8MB (`nats.conf`). Live work is `watch` (`http://127.0.0.1:8080` or `docker compose logs -f watch`). Results are `reports/report.html`. Bus health is `http://127.0.0.1:8222`.
 
 ## Event schema
 
@@ -95,3 +96,7 @@ docker compose run --rm seed --profile web --scope web1 ip 192.168.1.1
 ## Report (PoC only)
 
 Stand-in sink: POST `REPORT_URL` or `reports/events.jsonl` + `report.html`. The file sink resets on startup. Service rows show **product/version** and NSE `scripts` JSON. Replace this with your merge API.
+
+## Watch
+
+`watch` is a live tail of who is working. SDK publishes `start` / `done` / `error` / `skip` on `adama.activity` (core NATS, not the EVENTS stream). Browser: `http://127.0.0.1:8080`. Terminal: `docker compose logs -f watch`.

@@ -10,6 +10,7 @@ import (
 	"adama/event"
 
 	natsserver "github.com/nats-io/nats-server/v2/server"
+	"github.com/nats-io/nats.go"
 )
 
 func startJS(t *testing.T) string {
@@ -70,6 +71,61 @@ func TestFanoutAndDedup(t *testing.T) {
 	time.Sleep(400 * time.Millisecond)
 	if a.Load() != 1 || b.Load() != 1 {
 		t.Fatalf("dedup failed a=%d b=%d", a.Load(), b.Load())
+	}
+	cancel()
+	wg.Wait()
+}
+
+func TestActivity(t *testing.T) {
+	url := startJS(t)
+	nc, err := nats.Connect(url)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer nc.Close()
+	ch := make(chan event.Activity, 8)
+	if _, err := nc.Subscribe(event.ActivitySubject, func(m *nats.Msg) {
+		a, err := event.DecodeActivity(m.Data)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		ch <- a
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		_ = Run(ctx, Config{
+			Name:  "tool-a",
+			URL:   url,
+			Kinds: []event.Kind{event.KindPort},
+			Handle: func(_ context.Context, ev event.Event) ([]event.Event, error) {
+				return nil, nil
+			},
+		})
+	}()
+	time.Sleep(400 * time.Millisecond)
+	if err := Seed(ctx, url, event.Event{Kind: event.KindPort, Value: "example.com:443"}); err != nil {
+		t.Fatal(err)
+	}
+
+	var got []string
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) && len(got) < 2 {
+		select {
+		case a := <-ch:
+			got = append(got, a.Action)
+		case <-time.After(50 * time.Millisecond):
+		}
+	}
+	if len(got) < 2 || got[0] != "start" || got[1] != "done" {
+		t.Fatalf("actions %v", got)
 	}
 	cancel()
 	wg.Wait()
