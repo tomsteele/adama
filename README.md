@@ -75,7 +75,7 @@ HTTP tools do **not** listen on raw `port`. `as-url` translates `service` names 
 | `dnsx` | `domain` | `fqdn` | dictionary (`wordlists/dns.txt`) |
 | `ctl` | `domain` | `fqdn` | Shodan CT hostnames, kept only if dnsx sees A/AAAA |
 | `nmap-quick` | live `ip`, live `fqdn` | `port` | YAML `--top-ports 1000`; `-Pn`; any tool that sets `alive` |
-| `nmap-http` | live `ip`, live `fqdn` | `port` | YAML; fat HTTP/S list; same live gate |
+| `nmap-http` | live `ip`, live `fqdn` | `port` | YAML; 25 common HTTP/S ports; same live gate |
 | `nmap-full` | **live `ip`** | `port` | YAML `-sT -sU`; all TCP + common UDP; one scan per address |
 | `nmap-svc` | `port` | `service` | YAML; `-sV` plus `default,safe,discovery` scripts |
 | `tlsx` | `port` | `fqdn` | CN/SAN on every open port, not just 443 |
