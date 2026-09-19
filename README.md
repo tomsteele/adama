@@ -72,7 +72,7 @@ HTTP tools do **not** listen on raw `port`. `as-url` translates `service` names 
 | `dnsx` | `domain` | `fqdn` | dictionary (`wordlists/dns.txt`) |
 | `nmap-quick` | `fqdn`, `ip` | `ip`, `port` | YAML; nmap `--top-ports 1000` |
 | `nmap-http` | `fqdn`, `ip` | `port` | YAML; fat HTTP/S port list (vhost `:8080` etc.) |
-| `nmap-full` | **`ip` only** | `port` | YAML `-p-`; one full scan per address |
+| `nmap-full` | **`ip` only** | `port` | YAML `-sT -sU`; all TCP + common UDP; one scan per address |
 | `nmap-svc` | `port` | `service` | YAML; `-sV` plus `default,safe,discovery` scripts |
 | `tlsx` | `port` (443) | `fqdn` | CN/SAN names plus cert meta |
 | `as-url` | `service` | `url` | only if nmap says http(s) |
