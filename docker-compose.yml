@@ -1,0 +1,87 @@
+services:
+  nats:
+    image: nats:2-alpine
+    command: ["-js", "-m", "8222", "--max_payload", "8388608"]
+    ports:
+      - "4222:4222"
+      - "8222:8222"
+
+  nmap:
+    build:
+      context: .
+      target: nmap
+    environment:
+      NATS_URL: nats://nats:4222
+    depends_on:
+      - nats
+    restart: unless-stopped
+
+  discover:
+    build:
+      context: .
+      target: nmap
+    entrypoint: ["discover-worker"]
+    environment:
+      NATS_URL: nats://nats:4222
+    depends_on:
+      - nats
+    restart: unless-stopped
+
+  nmap-svc:
+    build:
+      context: .
+      target: nmap
+    entrypoint: ["nmap-svc-worker"]
+    environment:
+      NATS_URL: nats://nats:4222
+    depends_on:
+      - nats
+    restart: unless-stopped
+
+  gowitness:
+    build:
+      context: .
+      target: gowitness
+    environment:
+      NATS_URL: nats://nats:4222
+      SCREENSHOT_DIR: /screenshots
+    volumes:
+      - ./screenshots:/screenshots
+    depends_on:
+      - nats
+    restart: unless-stopped
+
+  report:
+    build:
+      context: .
+      target: report
+    environment:
+      NATS_URL: nats://nats:4222
+      REPORT_FILE: /reports/events.jsonl
+      # REPORT_URL: https://example.invalid/ingest
+    volumes:
+      - ./reports:/reports
+    depends_on:
+      - nats
+    restart: unless-stopped
+
+  seed:
+    build:
+      context: .
+      target: seed
+    environment:
+      NATS_URL: nats://nats:4222
+    depends_on:
+      - nats
+    profiles: ["seed"]
+
+  dev:
+    image: golang:1.26-bookworm
+    working_dir: /workspace
+    volumes:
+      - .:/workspace
+    environment:
+      NATS_URL: nats://nats:4222
+    command: sleep infinity
+    depends_on:
+      - nats

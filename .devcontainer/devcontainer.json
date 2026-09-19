@@ -1,0 +1,12 @@
+{
+  "name": "adama",
+  "dockerComposeFile": ["../docker-compose.yml"],
+  "service": "dev",
+  "workspaceFolder": "/workspace",
+  "overrideCommand": true,
+  "customizations": {
+    "vscode": {
+      "extensions": ["golang.go"]
+    }
+  }
+}
