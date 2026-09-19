@@ -1,0 +1,25 @@
+name: nuclei-net
+kinds: [service]
+ack_wait: 15m
+# worker appends -u host:port (skips http/https). no http/headless/code.
+nuclei_args:
+  - -silent
+  - -jsonl
+  - -omit-template
+  - -ss
+  - host-spray
+  - -pt
+  - ssl,tcp,dns,javascript
+  - -etags
+  - dos,fuzz
+  - -rl
+  - "80"
+  - -c
+  - "15"
+  - -retries
+  - "2"
+  - -timeout
+  - "10"
+  - -max-time
+  - 10m
+  - -duc

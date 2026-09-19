@@ -111,6 +111,16 @@ services:
     depends_on: [nats]
     restart: unless-stopped
 
+  nuclei-net:
+    build:
+      context: .
+      target: nuclei
+    environment:
+      NATS_URL: nats://nats:4222
+      NUCLEI_PROFILE: /profiles/nuclei-net.yaml
+    depends_on: [nats]
+    restart: unless-stopped
+
   report:
     build:
       context: .

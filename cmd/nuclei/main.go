@@ -29,7 +29,12 @@ func main() {
 		Kinds:   p.kinds(),
 		AckWait: p.ackWait(),
 		Handle: func(ctx context.Context, ev event.Event) ([]event.Event, error) {
-			args := append(append([]string{}, p.NucleiArgs...), "-u", ev.Value)
+			u, ok := target(ev)
+			if !ok {
+				slog.Info("nuclei skip", "kind", ev.Kind, "value", ev.Value)
+				return nil, nil
+			}
+			args := append(append([]string{}, p.NucleiArgs...), "-u", u)
 			out, err := exec.CommandContext(ctx, "nuclei", args...).Output()
 			if err != nil {
 				if x, ok := err.(*exec.ExitError); ok {
@@ -39,7 +44,7 @@ func main() {
 				}
 			}
 			evs := parseHits(out, ev)
-			slog.Info("nuclei", "url", ev.Value, "findings", len(evs))
+			slog.Info("nuclei", "target", u, "findings", len(evs))
 			return evs, nil
 		},
 	})

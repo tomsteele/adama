@@ -25,8 +25,10 @@ flowchart LR
   asUrl -->|url| events
   events --> httpx
   events --> nuclei
+  events --> nucleiNet[nuclei-net]
   httpx -->|screenshot| events
   nuclei -->|finding| events
+  nucleiNet -->|finding| events
   events --> report
 ```
 
@@ -55,11 +57,11 @@ Every tool speaks the same envelope. Naabu, nmap, httpx, etc. should emit these 
 | `service` | `host:port/name` | **`name`, `product`, `version`**, `scripts` (id→output JSON) |
 | `url` | `http(s)://host` | `host`, `port`, `name`, `product` |
 | `screenshot` | URL | image on `data`; title/status/tech/etc in meta |
-| `finding` | `nuclei/<template>/<url>` | `template`, `severity`, `name`, `extracted`, `description`, `tags`, `matcher` |
+| `finding` | `nuclei/<template>/<target>` | `template`, `severity`, `name`, `extracted`, `description`, `tags`, `matcher` |
 
 `service.product` / `version` is how you *see* what nmap (or anything else) fingerprinted. `nmap-svc` fills it; another tool can emit the same `service` shape.
 
-HTTP tools do **not** listen on raw `port`. `as-url` translates `service` names like `http`/`https` into `url`. httpx and nuclei subscribe to `url`.
+HTTP tools do **not** listen on raw `port`. `as-url` translates `service` names like `http`/`https` into `url`. httpx and `nuclei` subscribe to `url`. `nuclei-net` takes non-web `service` events (`ssh`, `ssl`, …) and passes `host:port`.
 
 ## Tool registry
 
@@ -75,7 +77,8 @@ HTTP tools do **not** listen on raw `port`. `as-url` translates `service` names 
 | `tlsx` | `port` (443) | `fqdn` | CN/SAN names plus cert meta |
 | `as-url` | `service` | `url` | only if nmap says http(s) |
 | `httpx` | `url` | `screenshot` | YAML profile; png/jpeg on `data` plus title/status/tech/cdn/asn/jarm |
-| `nuclei` | `url` | `finding` | YAML; full catalog minus dos/fuzz; OAST on |
+| `nuclei` | `url` | `finding` | YAML; HTTP catalog minus dos/fuzz; OAST on |
+| `nuclei-net` | `service` | `finding` | YAML; `-pt ssl,tcp,dns,javascript`; skips http(s) |
 | `report` | `screenshot`, `service`, `finding` | — | PoC sink |
 
 `nmap-quick`, `nmap-http`, and `nmap-full` are **separate consumers** (`profiles/*.yaml`). Duplicate work is fine. Full scan is IP-only so ten vhosts on one host do not get ten `-p-` runs; they still each get quick (top-1000), the HTTP port sweep, and HTTP tools (SNI).
