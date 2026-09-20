@@ -8,7 +8,7 @@ Read `README.md` for the event schema and tool graph. This file is how to change
 
 - `event/` — kinds, envelope, `Live` / `MarkLive`, activity
 - `sdk/` — connect, subscribe, dedup, gate (`allow`/`deny`/`NeedLive`), activity notes
-- `cmd/<tool>/` — one worker each; nmap-quick/http/full share `cmd/nmap` + a profile
+- `cmd/<tool>/` — one worker each; nmap-quick/http/full share `cmd/nmap` + a profile; `export` is the durable JSONL sink
 - `profiles/*.yaml` — tool flags (`NMAP_PROFILE`, `HTTPX_PROFILE`, `NUCLEI_PROFILE`)
 - `profiles/runs/` — seed `--profile` kits
 - `internal/nmapx`, `internal/asurl` — shared parse / HTTP detect
@@ -33,4 +33,4 @@ docker compose up -d --build
 docker compose run --rm seed ip 192.168.1.1
 ```
 
-Go via mise (`go@1.24+`). Watch: `http://127.0.0.1:8080`. Report: `reports/report.html`.
+Go via mise (`go@1.24+`). Watch: `http://127.0.0.1:8080`. Report: `reports/report.html`. Export: `exports/events.jsonl`.

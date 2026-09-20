@@ -13,6 +13,7 @@ RUN CGO_ENABLED=0 go build -o /out/seed ./cmd/seed \
  && CGO_ENABLED=0 go build -o /out/nuclei ./cmd/nuclei \
  && CGO_ENABLED=0 go build -o /out/httpx ./cmd/httpx \
  && CGO_ENABLED=0 go build -o /out/report ./cmd/report \
+ && CGO_ENABLED=0 go build -o /out/export ./cmd/export \
  && CGO_ENABLED=0 go build -o /out/watch ./cmd/watch \
  && CGO_ENABLED=0 go build -o /out/ctl ./cmd/ctl
 
@@ -34,6 +35,10 @@ ENTRYPOINT ["nmap-worker"]
 FROM alpine:3.21 AS report
 COPY --from=build /out/report /usr/local/bin/report
 ENTRYPOINT ["report"]
+
+FROM alpine:3.21 AS export
+COPY --from=build /out/export /usr/local/bin/export
+ENTRYPOINT ["export"]
 
 FROM alpine:3.21 AS watch
 COPY --from=build /out/watch /usr/local/bin/watch

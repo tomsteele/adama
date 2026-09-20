@@ -26,6 +26,8 @@ screenshots/*
 !screenshots/.gitkeep
 reports/*
 !reports/.gitkeep
+exports/*
+!exports/.gitkeep
 
 # httpx / nuclei leftovers from host runs
 output/

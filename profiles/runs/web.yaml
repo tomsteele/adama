@@ -8,3 +8,4 @@ allow:
   - httpx
   - nuclei
   - report
+  - export

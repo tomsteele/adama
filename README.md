@@ -33,6 +33,7 @@ flowchart LR
   nuclei -->|finding| events
   nucleiNet -->|finding| events
   events --> report
+  events --> export
 ```
 
 ```bash
@@ -44,7 +45,7 @@ docker compose logs -f watch
 # live: http://127.0.0.1:8080
 ```
 
-Scan only hosts you are allowed to touch. Tool flags live in `profiles/*.yaml` (`NMAP_PROFILE`, `HTTPX_PROFILE`, `NUCLEI_PROFILE`). NATS payload is 8MB (`nats.conf`). Live work is `watch` (`http://127.0.0.1:8080` or `docker compose logs -f watch`). Results are `reports/report.html`. Bus health is `http://127.0.0.1:8222`.
+Scan only hosts you are allowed to touch. Tool flags live in `profiles/*.yaml` (`NMAP_PROFILE`, `HTTPX_PROFILE`, `NUCLEI_PROFILE`). NATS payload is 8MB (`nats.conf`). Live work is `watch` (`http://127.0.0.1:8080` or `docker compose logs -f watch`). Results are `reports/report.html`. Durable JSONL is `exports/events.jsonl`. Bus health is `http://127.0.0.1:8222`.
 
 ## Event schema
 
@@ -83,7 +84,8 @@ HTTP tools do **not** listen on raw `port`. `as-url` translates `service` names 
 | `httpx` | `url` | `screenshot` | YAML profile; png/jpeg on `data` plus title/status/tech/cdn/asn/jarm |
 | `nuclei` | `url` | `finding` | YAML; HTTP catalog minus dos/fuzz; OAST on |
 | `nuclei-net` | `service` | `finding` | YAML; `-pt ssl,tcp,dns,javascript`; skips http(s) |
-| `report` | `screenshot`, `service`, `finding` | — | PoC sink |
+| `report` | `screenshot`, `service`, `finding` | — | PoC HTML sink |
+| `export` | all kinds | — | append-only JSONL (`EXPORT_FILE`) |
 
 `-Pn` scanners (`nmap-quick`, `nmap-http`, `nmap-full`) only run on `ip`/`fqdn` with `meta.alive=true`. `nmap-discover` is the current producer; another liveness tool can emit the same shape. Seed/ctl names are not alive. Full stays IP-only so ten vhosts share one `-sT -sU`. Quick and http also take each live name so SNI and `:8443` still happen per vhost. `tlsx` follows every open `port`.
 
@@ -102,7 +104,13 @@ docker compose run --rm seed --profile web --scope web1 ip 192.168.1.1
 
 ## Report (PoC only)
 
-Stand-in sink: POST `REPORT_URL` or `reports/events.jsonl` + `report.html`. The file sink resets on startup. Service rows show **product/version** and NSE `scripts` JSON. Replace this with your merge API.
+Stand-in sink: POST `REPORT_URL` or `reports/events.jsonl` + `report.html`. The file sink resets on startup. Service rows show **product/version** and NSE `scripts` JSON. For a durable feed, use `export`.
+
+## JSONL export
+
+`export` is an append-only pipe of the bus. Durable name **`export`** (gate `--allow` / `--deny` must use that, not `report`). Default file `exports/events.jsonl`; `EXPORT_FILE=-` writes stdout. It does not truncate on restart; JetStream resumes from the last ack.
+
+Each line is one event envelope (`id`, `kind`, `value`, `source`, `parent_id`, `observed_at`, `meta`, optional `data` / `media_type`). Correlate with `parent_id` (tree) plus `kind`+`value`. `meta` is string→string; lists are comma-joined. Screenshot `data` is standard base64; lines can approach the 8MB NATS cap. Dedup is first `(export, kind, value, scope)` per 24h.
 
 ## Watch
 
