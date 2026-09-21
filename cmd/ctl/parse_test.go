@@ -25,8 +25,14 @@ func TestParseHostnames(t *testing.T) {
 
 func TestKeepResolved(t *testing.T) {
 	in := parseHostnames([]byte(`["www.example.com","dead.example.com"]`), "example.com")
-	got := keepResolved(in, []byte("www.example.com [1.2.3.4]\n"))
+	got, err := keepResolved(in, []byte(`{"host":"www.example.com","a":["1.2.3.4"]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
 	if len(got) != 1 || got[0].Value != "www.example.com" {
 		t.Fatalf("%+v", got)
+	}
+	if got[0].Host != "1.2.3.4" || got[0].NameRole != event.NameDNSA {
+		t.Fatalf("missing DNS relationship: %+v", got[0])
 	}
 }

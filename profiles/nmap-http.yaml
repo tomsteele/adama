@@ -2,6 +2,7 @@
 name: nmap-http
 kinds: [ip, fqdn]
 ack_wait: 10m
+ipv6_args: ["-6"]
 nmap_args:
   - -Pn
   - -n

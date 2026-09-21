@@ -26,8 +26,9 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	err := sdk.Run(ctx, sdk.Config{
-		Name:  "report",
-		Kinds: kinds(),
+		Name:    "report",
+		Observe: true,
+		Kinds:   kinds(),
 		Handle: func(ctx context.Context, ev event.Event) ([]event.Event, error) {
 			if err := deliver(ctx, url, file, ev); err != nil {
 				return nil, err

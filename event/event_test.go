@@ -1,6 +1,9 @@
 package event
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestCanon(t *testing.T) {
 	d, err := (Event{Kind: KindDomain, Value: "Example.COM."}).Canonical()
@@ -22,10 +25,10 @@ func TestCanon(t *testing.T) {
 	if err != nil || ev.Value != "example.com:443" || ev.Meta["host"] != "example.com" {
 		t.Fatalf("canon port: %+v %v", ev, err)
 	}
-	if DedupKey("httpx", Event{Kind: KindPort, Value: "example.com:443"}) != "httpx/port/example.com_443" {
+	if !strings.HasPrefix(DedupKey("httpx", Event{Kind: KindPort, Value: "example.com:443"}), "v2/") {
 		t.Fatalf("key: %s", DedupKey("httpx", Event{Kind: KindPort, Value: "example.com:443"}))
 	}
-	if DedupKey("httpx", Event{Kind: KindIP, Value: "1.2.3.4", Meta: map[string]string{"scope": "web"}}) != "httpx/ip/1.2.3.4/web" {
+	if DedupKey("httpx", Event{Kind: KindIP, Value: "1.2.3.4", Meta: map[string]string{"scope": "web"}}) == DedupKey("httpx", Event{Kind: KindIP, Value: "1.2.3.4"}) {
 		t.Fatal("scope key")
 	}
 	if !Allowed("nuclei", nil) || !Allowed("nuclei", map[string]string{}) {

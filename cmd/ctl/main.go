@@ -79,7 +79,7 @@ func resolving(ctx context.Context, evs []event.Event) ([]event.Event, error) {
 		b.WriteString(ev.Value)
 		b.WriteByte('\n')
 	}
-	cmd := exec.CommandContext(ctx, "dnsx", "-silent", "-a", "-aaaa")
+	cmd := exec.CommandContext(ctx, "dnsx", "-silent", "-a", "-aaaa", "-json")
 	cmd.Stdin = strings.NewReader(b.String())
 	out, err := cmd.Output()
 	if err != nil {
@@ -89,5 +89,5 @@ func resolving(ctx context.Context, evs []event.Event) ([]event.Event, error) {
 			return nil, err
 		}
 	}
-	return keepResolved(evs, out), nil
+	return keepResolved(evs, out)
 }

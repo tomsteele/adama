@@ -11,14 +11,22 @@ func target(ev event.Event) (string, bool) {
 	if ev.Kind != event.KindService {
 		return ev.Value, ev.Value != ""
 	}
-	if asurl.IsWeb(ev.Meta["name"]) {
+	name := ev.Service
+	if name == "" {
+		name = ev.Meta["name"]
+	}
+	if asurl.IsWeb(name) {
 		return "", false
 	}
-	p, err := strconv.Atoi(ev.Meta["port"])
-	if err != nil {
-		return "", false
+	p := ev.Port
+	if p == 0 {
+		p, _ = strconv.Atoi(ev.Meta["port"])
 	}
-	v, err := event.PortValue(ev.Meta["host"], p)
+	host := ev.Target.Authority()
+	if host == "" {
+		host = ev.Meta["host"]
+	}
+	v, err := event.PortValue(host, p)
 	if err != nil {
 		return "", false
 	}

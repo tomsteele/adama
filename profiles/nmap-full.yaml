@@ -2,6 +2,7 @@
 name: nmap-full
 kinds: [ip]
 ack_wait: 2h
+ipv6_args: ["-6"]
 nmap_args:
   - --min-rate=150
   - --min-hostgroup=25

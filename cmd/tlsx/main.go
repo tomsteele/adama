@@ -6,7 +6,6 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
-	"strconv"
 	"syscall"
 
 	"adama/event"
@@ -20,15 +19,15 @@ func main() {
 		Name:  "tlsx",
 		Kinds: []event.Kind{event.KindPort},
 		Handle: func(ctx context.Context, ev event.Event) ([]event.Event, error) {
-			p, err := strconv.Atoi(ev.Meta["port"])
+			u, err := event.PortValue(ev.TargetHost(), ev.Port)
 			if err != nil {
 				return nil, nil
 			}
-			u, err := event.PortValue(ev.Meta["host"], p)
-			if err != nil {
-				return nil, nil
+			args := []string{"-u", u, "-san", "-cn", "-silent", "-nc", "-json"}
+			if ev.Name != "" && ev.NameRole == event.NameRequested {
+				args = append(args, "-sni", ev.Name)
 			}
-			out, err := exec.CommandContext(ctx, "tlsx", "-u", u, "-san", "-cn", "-silent", "-nc", "-json").Output()
+			out, err := exec.CommandContext(ctx, "tlsx", args...).Output()
 			if err != nil {
 				if x, ok := err.(*exec.ExitError); ok {
 					slog.Warn("tlsx exit", "err", err, "stderr", string(x.Stderr))
@@ -36,9 +35,9 @@ func main() {
 					return nil, err
 				}
 			}
-			evs := parseTLSX(out, ev)
+			evs, err := parseTLSX(out, ev)
 			slog.Info("tlsx", "target", ev.Value, "names", len(evs))
-			return evs, nil
+			return evs, err
 		},
 	})
 	if err != nil && ctx.Err() == nil {

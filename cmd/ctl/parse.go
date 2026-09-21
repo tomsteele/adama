@@ -1,11 +1,11 @@
 package main
 
 import (
-	"bytes"
 	"encoding/json"
 	"strings"
 
 	"adama/event"
+	"adama/internal/dnsresult"
 )
 
 func parseHostnames(body []byte, domain string) []event.Event {
@@ -33,30 +33,34 @@ func parseHostnames(body []byte, domain string) []event.Event {
 		}
 		seen[name] = true
 		evs = append(evs, event.Event{
-			Kind:  event.KindFQDN,
-			Value: name,
-			Meta:  map[string]string{"parent": domain, "via": "ctl"},
+			SchemaVersion: event.SchemaVersion,
+			Kind:          event.KindFQDN,
+			Value:         name,
+			Target:        event.Target{Name: name, NameRole: event.NameCT},
+			Probe:         "certificate-transparency",
+			Meta:          map[string]string{"parent": domain, "via": "ctl"},
 		})
 	}
 	return evs
 }
 
-func keepResolved(evs []event.Event, stdout []byte) []event.Event {
-	live := map[string]bool{}
-	for _, line := range bytes.Split(stdout, []byte("\n")) {
-		s := strings.TrimSpace(string(line))
-		if i := strings.IndexAny(s, " \t["); i > 0 {
-			s = s[:i]
-		}
-		if n := event.CanonFQDN(s); n != "" {
-			live[n] = true
-		}
+func keepResolved(evs []event.Event, stdout []byte) ([]event.Event, error) {
+	resolved, err := dnsresult.Parse(stdout, "ctl", "")
+	if err != nil {
+		return nil, err
+	}
+	names := map[string]event.Event{}
+	for _, ev := range evs {
+		names[ev.Value] = ev
 	}
 	var out []event.Event
-	for _, ev := range evs {
-		if live[ev.Value] {
+	for _, ev := range resolved {
+		if original, ok := names[ev.Value]; ok {
+			ev.Meta["parent"] = original.Meta["parent"]
+			ev.Info["parent"] = original.Meta["parent"]
+			ev.Info["discovery"] = "certificate_transparency"
 			out = append(out, ev)
 		}
 	}
-	return out
+	return out, nil
 }

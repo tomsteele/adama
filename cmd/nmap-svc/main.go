@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"strconv"
 	"syscall"
 
 	"adama/event"
@@ -30,11 +31,11 @@ func main() {
 		Kinds:   p.EventKinds(),
 		AckWait: p.Ack(),
 		Handle: func(ctx context.Context, ev event.Event) ([]event.Event, error) {
-			host, port := ev.Meta["host"], ev.Meta["port"]
-			if host == "" || port == "" {
+			host, port := ev.TargetHost(), ev.Port
+			if host == "" || port == 0 {
 				return nil, nil
 			}
-			args := append(append([]string{}, p.NmapArgs...), "-p", port, "-oX", "-", host)
+			args := append(p.Args(ev), "-p", strconv.Itoa(port), "-oX", "-", host)
 			out, err := exec.CommandContext(ctx, "nmap", args...).Output()
 			if err != nil {
 				if x, ok := err.(*exec.ExitError); ok {

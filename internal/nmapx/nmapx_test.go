@@ -30,20 +30,20 @@ func TestParseXML(t *testing.T) {
     </ports>
   </host>
 </nmaprun>`
-	addrs, ports, err := ParseXML([]byte(xml))
+	scans, err := ParseXML([]byte(xml))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(addrs) != 1 || addrs[0] != "1.2.3.4" {
-		t.Fatalf("addrs: %v", addrs)
+	if len(scans) != 1 || scans[0].IP != "1.2.3.4" {
+		t.Fatalf("scans: %v", scans)
 	}
-	if len(ports) != 2 {
-		t.Fatalf("ports: %v", ports)
+	if len(scans[0].Ports) != 2 {
+		t.Fatalf("ports: %v", scans[0].Ports)
 	}
 }
 
 func TestExpandFQDN(t *testing.T) {
-	got := Expand(event.Event{Kind: event.KindFQDN, Value: "example.com"}, []string{"1.2.3.4"}, []int{80, 443})
+	got := Expand(event.Event{Kind: event.KindFQDN, Value: "example.com"}, []Scan{{Host: Host{IP: "1.2.3.4"}, Ports: []OpenPort{{80, event.TCP}, {443, event.TCP}}}})
 	want := map[string]event.Kind{
 		"1.2.3.4":         event.KindIP,
 		"example.com:80":  event.KindPort,
@@ -59,7 +59,7 @@ func TestExpandFQDN(t *testing.T) {
 		if !ok || k != ev.Kind {
 			t.Fatalf("unexpected %+v", ev)
 		}
-		if ev.Meta["fqdns"] != "example.com" || ev.Meta["ips"] != "1.2.3.4" {
+		if ev.Host != "1.2.3.4" || (ev.Kind == event.KindPort && ev.Proto != event.TCP) {
 			t.Fatalf("aliases %+v", ev)
 		}
 	}
@@ -69,6 +69,7 @@ func TestParseServices(t *testing.T) {
 	const xml = `<?xml version="1.0"?>
 <nmaprun>
   <host>
+    <address addr="1.2.3.4" addrtype="ipv4"/>
     <ports>
       <port protocol="tcp" portid="443">
         <state state="open"/>
@@ -153,14 +154,14 @@ func TestParseDiscovery(t *testing.T) {
 }
 
 func TestExpandKeepsNetblock(t *testing.T) {
-	got := Expand(event.Event{Kind: event.KindIP, Value: "10.0.0.7", Meta: map[string]string{"netblock": "10.0.0.0/24"}}, []string{"10.0.0.7"}, []int{443})
+	got := Expand(event.Event{Kind: event.KindIP, Value: "10.0.0.7", Meta: map[string]string{"netblock": "10.0.0.0/24"}}, []Scan{{Host: Host{IP: "10.0.0.7"}, Ports: []OpenPort{{443, event.TCP}}}})
 	if len(got) == 0 || got[0].Meta["netblock"] != "10.0.0.0/24" {
 		t.Fatalf("%+v", got)
 	}
 }
 
 func TestExpandDoesNotEchoIP(t *testing.T) {
-	got := Expand(event.Event{Kind: event.KindIP, Value: "1.2.3.4", Meta: map[string]string{"fqdns": "example.com"}}, []string{"1.2.3.4"}, []int{443})
+	got := Expand(event.Event{Kind: event.KindIP, Value: "1.2.3.4", Meta: map[string]string{"fqdns": "example.com"}}, []Scan{{Host: Host{IP: "1.2.3.4"}, Ports: []OpenPort{{443, event.TCP}}}})
 	for _, ev := range got {
 		if ev.Kind == event.KindIP && ev.Value == "1.2.3.4" {
 			t.Fatal("echoed trigger ip")

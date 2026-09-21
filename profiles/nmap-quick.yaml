@@ -2,6 +2,7 @@
 name: nmap-quick
 kinds: [ip, fqdn]
 ack_wait: 10m
+ipv6_args: ["-6"]
 nmap_args:
   - --min-rate=150
   - --min-hostgroup=25

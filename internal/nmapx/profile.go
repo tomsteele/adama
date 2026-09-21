@@ -2,7 +2,9 @@ package nmapx
 
 import (
 	"fmt"
+	"net/netip"
 	"os"
+	"strings"
 	"time"
 
 	"adama/event"
@@ -11,10 +13,28 @@ import (
 )
 
 type Profile struct {
-	Name     string   `yaml:"name"`
-	Kinds    []string `yaml:"kinds"`
-	NmapArgs []string `yaml:"nmap_args"`
-	AckWait  string   `yaml:"ack_wait"`
+	Name          string                      `yaml:"name"`
+	Kinds         []string                    `yaml:"kinds"`
+	NmapArgs      []string                    `yaml:"nmap_args"`
+	AckWait       string                      `yaml:"ack_wait"`
+	IPv6Args      []string                    `yaml:"ipv6_args"`
+	TransportArgs map[event.Protocol][]string `yaml:"transport_args"`
+	HostnameArgs  []string                    `yaml:"hostname_args"`
+}
+
+// Args keeps tool flags in profiles and substitutes only target data here.
+func (p Profile) Args(ev event.Event) []string {
+	args := append([]string{}, p.NmapArgs...)
+	args = append(args, p.TransportArgs[ev.Proto]...)
+	if ip, err := netip.ParseAddr(ev.TargetHost()); err == nil && ip.Is6() {
+		args = append(args, p.IPv6Args...)
+	}
+	if ev.Name != "" && ev.NameRole == event.NameRequested {
+		for _, arg := range p.HostnameArgs {
+			args = append(args, strings.ReplaceAll(arg, "{name}", ev.Name))
+		}
+	}
+	return args
 }
 
 func LoadProfile(path string) (Profile, error) {

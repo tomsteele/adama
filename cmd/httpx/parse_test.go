@@ -39,7 +39,7 @@ func TestParseResult(t *testing.T) {
 	if ev.Meta["asn"] != "AS13335" || ev.Meta["as_name"] != "CLOUDFLARENET" || ev.Meta["cdn"] != "true" {
 		t.Fatalf("asn/cdn %+v", ev.Meta)
 	}
-	if ev.Meta["product"] != "nginx" || ev.MediaType != "image/png" || len(ev.Data) == 0 {
+	if ev.Host != "" || ev.Name != "example.com" || ev.Port != 443 || ev.Proto != event.TCP || ev.MediaType != "image/png" || len(ev.Data) == 0 {
 		t.Fatalf("shot %+v", ev)
 	}
 }
@@ -88,5 +88,41 @@ func TestParseResultSkipFailed(t *testing.T) {
 	_, ok, err := parseResult([]byte(`{"url":"https://dead.invalid","failed":true}`))
 	if err != nil || ok {
 		t.Fatalf("want skip, ok=%v err=%v", ok, err)
+	}
+}
+
+func TestAllHTTPResultsRetainActualBackend(t *testing.T) {
+	results, err := parseResults([]byte("{\"url\":\"https://app.example.com:8443/Admin?Token=AbC\",\"host_ip\":\"192.0.2.2\",\"status_code\":200}\n{\"url\":\"https://app.example.com:8443/Admin?Token=AbC\",\"host\":\"192.0.2.3\",\"status_code\":200}\n"))
+	if err != nil || len(results) != 2 {
+		t.Fatalf("%+v %v", results, err)
+	}
+	in := event.Event{Kind: event.KindURL, Value: "https://app.example.com:8443/Admin?Token=AbC", Target: event.Target{Host: "192.0.2.1"}}
+	for i, r := range results {
+		ev, err := toEvent(in, r).Canonical()
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := []string{"192.0.2.2", "192.0.2.3"}[i]
+		if ev.Host != want || ev.Name != "app.example.com" || ev.Port != 8443 || ev.Value != in.Value {
+			t.Fatalf("incorrect endpoint %+v", ev)
+		}
+		if ev.Info["screenshot_status"] != "missing" {
+			t.Fatal("missing screenshot not identified")
+		}
+	}
+}
+
+func TestHTTPMissingAddressDoesNotInheritDNSCandidates(t *testing.T) {
+	in := event.Event{Kind: event.KindURL, Value: "https://app.example.com", Target: event.Target{Host: "192.0.2.1"}, Meta: map[string]string{"host": "192.0.2.1"}}
+	ev, err := toEvent(in, result{URL: in.Value, A: []string{"192.0.2.2"}, StatusCode: 200}).Canonical()
+	if err != nil || ev.Host != "" {
+		t.Fatalf("guessed connected IP %+v %v", ev, err)
+	}
+}
+
+func TestRedirectDoesNotAssertFinalEndpoint(t *testing.T) {
+	ev := toEvent(event.Event{Value: "https://initial.example.com"}, result{URL: "https://initial.example.com", HostIP: "192.0.2.1", FinalURL: "https://other.example.com/Login", StatusCode: 200})
+	if ev.Name != "initial.example.com" || ev.Info["redirect_endpoint"] != "unverified" || ev.Info["final_url"] != "https://other.example.com/Login" {
+		t.Fatalf("misattributed redirect %+v", ev)
 	}
 }

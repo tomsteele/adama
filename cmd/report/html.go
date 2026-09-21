@@ -13,6 +13,12 @@ import (
 )
 
 var reportTmpl = template.Must(template.New("report").Funcs(template.FuncMap{
+	"detail": func(ev event.Event, key string) string {
+		if value, ok := ev.Info[key]; ok {
+			return value
+		}
+		return ev.Meta[key]
+	},
 	"img": func(media string, data []byte) template.URL {
 		if len(data) == 0 {
 			return ""
@@ -36,18 +42,23 @@ dt{font-weight:600} dd{margin:0 0 .4rem 0}
 <section>
 <h2>{{.Kind}} {{.Value}}</h2>
 <p>{{.Source}} · {{.Observed.UTC.Format "2006-01-02 15:04:05"}}Z
-{{if and (eq .Kind "service") .Meta.product}} — {{.Meta.product}}{{if .Meta.version}} {{.Meta.version}}{{end}}{{end}}
-{{if and (eq .Kind "finding") .Meta.severity}} — {{.Meta.severity}}{{end}}</p>
-{{if eq .Kind "screenshot"}}
-  {{if .Meta.title}}<p>{{.Meta.title}}{{if .Meta.status_code}} — {{.Meta.status_code}}{{end}}{{if .Meta.webserver}} · {{.Meta.webserver}}{{end}}</p>{{end}}
-  {{if .Data}}<p><img src="{{img .MediaType .Data}}" alt="{{.Value}}"></p>{{else}}<p>no image</p>{{end}}
-  <dl>
-  {{range $k, $v := .Meta}}<dt>{{$k}}</dt><dd>{{$v}}</dd>{{end}}
-  </dl>
-{{else}}
+{{if eq .Kind "service"}}{{with detail . "product"}} — {{.}}{{end}}{{with detail . "version"}} {{.}}{{end}}{{end}}
+{{if eq .Kind "finding"}}{{with detail . "severity"}} — {{.}}{{end}}{{end}}</p>
 <dl>
-{{range $k, $v := .Meta}}<dt>{{$k}}</dt><dd>{{$v}}</dd>{{end}}
+{{if .Host}}<dt>IP</dt><dd>{{.Host}}</dd>{{end}}
+{{if .Name}}<dt>Hostname</dt><dd>{{.Name}} ({{.NameRole}})</dd>{{end}}
+{{if .Proto}}<dt>Protocol</dt><dd>{{.Proto}}{{if .Port}} / {{.Port}}{{end}}</dd>{{end}}
+{{if .URL}}<dt>URL</dt><dd>{{.URL}}</dd>{{end}}
+{{if .Service}}<dt>Service</dt><dd>{{.Service}}{{if .TLS}} over TLS{{end}}</dd>{{end}}
+{{if .Probe}}<dt>Probe</dt><dd>{{.Probe}}</dd>{{end}}
+{{if .RunID}}<dt>Run</dt><dd>{{.RunID}}</dd>{{end}}
+{{if .ScanID}}<dt>Scan</dt><dd>{{.ScanID}}</dd>{{end}}
+{{if .Input}}<dt>Input</dt><dd>{{.Input.Kind}} {{.Input.Value}}{{if .Input.Host}} at {{.Input.Host}}{{end}}</dd>{{end}}
+{{if .Info}}{{range $k, $v := .Info}}<dt>{{$k}}</dt><dd>{{$v}}</dd>{{end}}
+{{else}}{{range $k, $v := .Meta}}<dt>{{$k}}</dt><dd>{{$v}}</dd>{{end}}{{end}}
 </dl>
+{{if eq .Kind "screenshot"}}
+  {{if .Data}}<p><img src="{{img .MediaType .Data}}" alt="{{.Value}}"></p>{{else}}<p>no image</p>{{end}}
 {{end}}
 </section>
 {{else}}

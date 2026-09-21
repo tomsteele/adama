@@ -42,13 +42,17 @@ func main() {
 			if err != nil {
 				slog.Warn("httpx exit", "err", err, "stderr", string(stderr))
 			}
-			r, ok, err := parseResult(out)
-			if err != nil || !ok {
+			results, err := parseResults(out)
+			if err != nil {
 				return nil, err
 			}
-			shot := toEvent(ev, r)
-			slog.Info("httpx", "url", shot.Value, "status", shot.Meta["status_code"], "title", shot.Meta["title"])
-			return []event.Event{shot}, nil
+			var events []event.Event
+			for _, r := range results {
+				shot := toEvent(ev, r)
+				slog.Info("httpx", "url", shot.Value, "host", shot.Host, "status", shot.Meta["status_code"])
+				events = append(events, shot)
+			}
+			return events, nil
 		},
 	})
 	if err != nil && ctx.Err() == nil {

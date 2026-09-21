@@ -1,6 +1,7 @@
 package event
 
 import (
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"net/netip"
@@ -26,12 +27,21 @@ const (
 const SubjectPrefix = "adama.event."
 
 type Event struct {
-	ID        string            `json:"id"`
-	Kind      Kind              `json:"kind"`
-	Value     string            `json:"value"`
-	Source    string            `json:"source"`
-	ParentID  string            `json:"parent_id,omitempty"`
-	Observed  time.Time         `json:"observed_at"`
+	SchemaVersion int       `json:"schema_version"`
+	ID            string    `json:"id"`
+	RunID         string    `json:"run_id,omitempty"`
+	ScanID        string    `json:"scan_id,omitempty"`
+	Kind          Kind      `json:"kind"`
+	Value         string    `json:"value"`
+	Source        string    `json:"source"`
+	ParentID      string    `json:"parent_id,omitempty"`
+	Observed      time.Time `json:"observed_at"`
+	Target
+	Input     *Input            `json:"input,omitempty"`
+	Probe     string            `json:"probe,omitempty"`
+	Service   string            `json:"service,omitempty"`
+	TLS       bool              `json:"tls,omitempty"`
+	Info      map[string]string `json:"info,omitempty"`
 	Meta      map[string]string `json:"meta,omitempty"`
 	Data      []byte            `json:"data,omitempty"`
 	MediaType string            `json:"media_type,omitempty"`
@@ -103,6 +113,9 @@ func SplitHostPort(value string) (host string, port int, err error) {
 }
 
 func PortValue(host string, port int) (string, error) {
+	if port < 1 || port > 65535 {
+		return "", fmt.Errorf("invalid port %d", port)
+	}
 	h, isIP, err := CanonHost(host)
 	if err != nil {
 		return "", err
@@ -116,6 +129,11 @@ func PortValue(host string, port int) (string, error) {
 }
 
 func (e Event) Canonical() (Event, error) {
+	if e.SchemaVersion != 0 && e.SchemaVersion != 1 && e.SchemaVersion != SchemaVersion {
+		return e, fmt.Errorf("unsupported schema version %d", e.SchemaVersion)
+	}
+	e.Meta = cloneMap(e.Meta)
+	e.Info = cloneMap(e.Info)
 	switch e.Kind {
 	case KindFQDN, KindDomain:
 		e.Value = CanonFQDN(e.Value)
@@ -150,15 +168,21 @@ func (e Event) Canonical() (Event, error) {
 		h, _, _ := CanonHost(host)
 		e.Meta["host"] = h
 		e.Meta["port"] = strconv.Itoa(port)
-	case KindScreenshot, KindService, KindURL, KindFinding:
-		e.Value = strings.ToLower(strings.TrimSpace(e.Value))
+	case KindScreenshot, KindURL:
+		v, err := CanonURL(e.Value)
+		if err != nil {
+			return e, err
+		}
+		e.Value = v
+	case KindService, KindFinding:
+		e.Value = strings.TrimSpace(e.Value)
 		if e.Value == "" {
 			return e, fmt.Errorf("empty %s", e.Kind)
 		}
 	default:
 		return e, fmt.Errorf("unknown kind %q", e.Kind)
 	}
-	return e, nil
+	return e.normalize()
 }
 
 func Live(ev Event) bool { return ev.Meta["alive"] == "true" }
@@ -172,13 +196,12 @@ func MarkLive(meta map[string]string) map[string]string {
 }
 
 func DedupKey(tool string, ev Event) string {
-	// KV keys cannot contain ':'
-	v := strings.ReplaceAll(ev.Value, ":", "_")
-	key := tool + "/" + string(ev.Kind) + "/" + v
-	if s := ev.Meta["scope"]; s != "" {
-		key += "/" + strings.ReplaceAll(s, ":", "_")
-	}
-	return key
+	// Encode components before hashing: URLs, IPv6 and scopes are not KV keys.
+	// The observed endpoint distinguishes different backends and transports.
+	identity := []any{tool, ev.Kind, ev.Value, ev.Meta["scope"], ev.Host,
+		ev.Name, ev.NameRole, ev.Port, ev.Proto, ev.SNI, ev.HTTPHost, ev.TLS}
+	b, _ := json.Marshal(identity)
+	return fmt.Sprintf("v2/%x", sha256.Sum256(b))
 }
 
 // Allowed is true unless this event names a deny or a non-empty allow that omits the tool.
@@ -201,6 +224,7 @@ func Allowed(tool string, meta map[string]string) bool {
 }
 
 func InheritGate(parent, child Event) Event {
+	child.Meta = cloneMap(child.Meta)
 	if child.Meta == nil {
 		child.Meta = map[string]string{}
 	}

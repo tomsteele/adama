@@ -25,11 +25,17 @@ func main() {
 	deny := fs.String("deny", "", "comma tool names that must not run")
 	profile := fs.String("profile", "", "run profile name or path (profiles/runs/<name>.yaml)")
 	scope := fs.String("scope", "", "dedup scope so the same value can be seeded again")
+	runID := fs.String("run", "", "group seed observations into this run (default: generated)")
+	proto := fs.String("proto", "", "transport for a port seed: tcp (default) or udp")
 	fs.Parse(os.Args[1:])
 
 	kind, value, err := parseArgs(fs.Args())
 	if err != nil {
-		slog.Error("usage: seed [-allow] [-deny] [-profile] [-scope] <kind> <value> | seed host:port")
+		slog.Error("usage: seed [-allow] [-deny] [-profile] [-scope] [-run] [-proto] <kind> <value> | seed host:port")
+		os.Exit(2)
+	}
+	if *proto != "" && (kind != event.KindPort || (*proto != "tcp" && *proto != "udp")) {
+		slog.Error("--proto requires a port seed and must be tcp or udp")
 		os.Exit(2)
 	}
 	al, dn := *allow, *deny
@@ -59,7 +65,8 @@ func main() {
 	if *profile != "" {
 		meta["profile"] = *profile
 	}
-	ev := event.Event{Kind: kind, Value: value, Source: "seed", Meta: meta}
+	ev := event.Event{Kind: kind, Value: value, Source: "seed", RunID: *runID, Meta: meta,
+		Target: event.Target{Proto: event.Protocol(*proto)}}
 	if err := sdk.Seed(context.Background(), sdk.NATSURL(), ev); err != nil {
 		slog.Error("seed", "err", err)
 		os.Exit(1)

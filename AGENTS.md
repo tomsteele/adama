@@ -1,12 +1,12 @@
 # Adama
 
-Reactive scan bus. Tools self-subscribe on NATS JetStream (`EVENTS`, 24h). Dedup is per `(tool, kind, value, scope)`.
+Reactive scan bus. Tools self-subscribe on NATS JetStream (`EVENTS`, 24h). Scanner dedup includes `(tool, kind, value, scope)` and explicit endpoint identity; observation sinks bypass work dedup.
 
 Read `README.md` for the event schema and tool graph. This file is how to change the code.
 
 ## Layout
 
-- `event/` — kinds, envelope, `Live` / `MarkLive`, activity
+- `event/` — kinds, v2 observation envelope/target, `SCHEMA.md`, `Live` / `MarkLive`, activity
 - `sdk/` — connect, subscribe, dedup, gate (`allow`/`deny`/`NeedLive`), activity notes
 - `cmd/<tool>/` — one worker each; nmap-quick/http/full share `cmd/nmap` + a profile; `export` is the durable JSONL sink
 - `profiles/*.yaml` — tool flags (`NMAP_PROFILE`, `HTTPX_PROFILE`, `NUCLEI_PROFILE`)
@@ -16,6 +16,7 @@ Read `README.md` for the event schema and tool graph. This file is how to change
 ## Conventions
 
 - Do not invent event kinds. Emit the existing ones (`domain`, `fqdn`, `netblock`, `ip`, `port`, `service`, `url`, `screenshot`, `finding`).
+- Preserve observed host/name/port/protocol pairs and `name_role`; never infer responding IPs from ancestor alias lists. Put results in `info`; the SDK supplies run/scan/parent/input lineage.
 - Put nmap/httpx/nuclei flags in YAML, not hardcoded in Go.
 - `-Pn` scanners use `NeedLive: true`. Only `nmap-discover` (or another probe) sets `meta.alive=true`.
 - `nmap-full` is IP-only. Quick/http also take live `fqdn` so vhosts get SNI ports.

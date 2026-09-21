@@ -76,6 +76,9 @@ func (b *Bus) Publish(ctx context.Context, ev event.Event) error {
 	if ev.ID == "" {
 		ev.ID = nuid.Next()
 	}
+	if ev.RunID == "" && ev.ParentID == "" {
+		ev.RunID = ev.ID
+	}
 	if ev.Observed.IsZero() {
 		ev.Observed = time.Now().UTC()
 	}
@@ -93,6 +96,7 @@ type Config struct {
 	Kinds    []event.Kind
 	AckWait  time.Duration
 	NeedLive bool // skip before dedup unless meta.alive=true
+	Observe  bool // observation sinks receive every event; redelivery retains its ID
 	Handle   func(context.Context, event.Event) ([]event.Event, error)
 }
 
@@ -163,6 +167,9 @@ func (b *Bus) onMsg(ctx context.Context, cfg Config, msg jetstream.Msg) {
 		_ = msg.Ack()
 		return
 	}
+	if ev.RunID == "" && ev.ParentID == "" {
+		ev.RunID = ev.ID
+	}
 	if !event.Allowed(cfg.Name, ev.Meta) {
 		slog.Info("skip", "tool", cfg.Name, "kind", ev.Kind, "value", ev.Value, "reason", "gate")
 		b.note("skip", cfg.Name, ev, "gate", 0, 0)
@@ -176,37 +183,55 @@ func (b *Bus) onMsg(ctx context.Context, cfg Config, msg jetstream.Msg) {
 		return
 	}
 	key := event.DedupKey(cfg.Name, ev)
-	if _, err := b.KV.Create(ctx, key, []byte("1")); err != nil {
-		if errors.Is(err, jetstream.ErrKeyExists) {
-			slog.Info("skip", "tool", cfg.Name, "kind", ev.Kind, "value", ev.Value)
-			b.note("skip", cfg.Name, ev, "dedup", 0, 0)
-			_ = msg.Ack()
+	if !cfg.Observe {
+		if _, err := b.KV.Create(ctx, key, []byte("1")); err != nil {
+			if errors.Is(err, jetstream.ErrKeyExists) {
+				slog.Info("skip", "tool", cfg.Name, "kind", ev.Kind, "value", ev.Value)
+				b.note("skip", cfg.Name, ev, "dedup", 0, 0)
+				_ = msg.Ack()
+				return
+			}
+			slog.Error("dedup", "err", err)
+			_ = msg.Nak()
 			return
 		}
-		slog.Error("dedup", "err", err)
-		_ = msg.Nak()
-		return
 	}
 
 	slog.Info("handle", "tool", cfg.Name, "kind", ev.Kind, "value", ev.Value)
 	t0 := time.Now()
 	b.note("start", cfg.Name, ev, "", 0, 0)
+	scanID := nuid.Next()
 	out, err := cfg.Handle(ctx, ev)
 	if err != nil {
 		slog.Error("handle", "tool", cfg.Name, "err", err)
 		b.note("error", cfg.Name, ev, err.Error(), 0, time.Since(t0))
-		_ = b.KV.Delete(ctx, key)
+		if !cfg.Observe {
+			_ = b.KV.Delete(ctx, key)
+		}
 		_ = msg.Nak()
 		return
 	}
 	for _, child := range out {
+		if child.SchemaVersion == 0 {
+			child.SchemaVersion = event.SchemaVersion
+		}
 		child.Source = cfg.Name
 		child.ParentID = ev.ID
+		child.RunID = ev.RunID
+		child.ScanID = scanID
+		if child.Input == nil {
+			child.Input = ev.AsInput()
+		}
+		if child.Probe == "" {
+			child.Probe = cfg.Name
+		}
 		child = event.InheritGate(ev, child)
 		if err := b.Publish(ctx, child); err != nil {
 			slog.Error("publish", "err", err, "kind", child.Kind, "value", child.Value)
 			b.note("error", cfg.Name, ev, err.Error(), 0, time.Since(t0))
-			_ = b.KV.Delete(ctx, key)
+			if !cfg.Observe {
+				_ = b.KV.Delete(ctx, key)
+			}
 			_ = msg.Nak()
 			return
 		}

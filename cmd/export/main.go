@@ -19,8 +19,9 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	err := sdk.Run(ctx, sdk.Config{
-		Name:  "export",
-		Kinds: allKinds,
+		Name:    "export",
+		Observe: true,
+		Kinds:   allKinds,
 		Handle: func(_ context.Context, ev event.Event) ([]event.Event, error) {
 			if err := appendJSONL(file, ev); err != nil {
 				return nil, err

@@ -2,6 +2,7 @@
 name: nmap-discover
 kinds: [netblock, fqdn, ip]
 ack_wait: 30m
+ipv6_args: ["-6"]
 nmap_args:
   - --initial-rtt-timeout=250ms
   - --min-rate=175

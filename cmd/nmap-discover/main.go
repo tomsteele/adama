@@ -30,7 +30,10 @@ func main() {
 		Kinds:   p.EventKinds(),
 		AckWait: p.Ack(),
 		Handle: func(ctx context.Context, ev event.Event) ([]event.Event, error) {
-			args := append(append([]string{}, p.NmapArgs...), "-oX", "-", ev.Value)
+			if event.Live(ev) {
+				return nil, nil
+			}
+			args := append(p.Args(ev), "-oX", "-", ev.TargetHost())
 			out, err := exec.CommandContext(ctx, "nmap", args...).Output()
 			if err != nil {
 				if x, ok := err.(*exec.ExitError); ok {

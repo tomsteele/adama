@@ -2,7 +2,7 @@
 
 A reactive passive and active discovery process.
 
-Tools subscribe themselves. Events live 24h. Dedup is per `(tool, kind, value)`.
+Tools subscribe themselves. Events live 24h. Scanner work is deduplicated per tool, scope, and target identity. Observation sinks receive every event.
 
 ```mermaid
 flowchart LR
@@ -49,21 +49,35 @@ Scan only hosts you are allowed to touch. Tool flags live in `profiles/*.yaml` (
 
 ## Event schema
 
-Every tool speaks the same envelope. Naabu, nmap, httpx, etc. should emit these kinds rather than inventing new ones.
+Every tool accepts and emits the same versioned `event.Event`. Version 2 carries explicit endpoint identity, result details, and scan lineage. See the [observation contract](event/SCHEMA.md) for the complete fields, examples, and consumer rules.
 
-| Kind | Value | Typical meta |
-|---|---|---|
-| `domain` | apex for dictionary enum (`example.com`) | |
-| `fqdn` | a hostname | `alive` if a probe confirmed it; `parent`, `via` |
-| `netblock` | CIDR (`10.0.0.0/24`) | |
-| `ip` | address | `alive` if a probe confirmed it; `fqdns`, `netblock` |
-| `port` | `host:port` | `host`, `port`, `fqdns`, `ips` |
-| `service` | `host:port/name` | **`name`, `product`, `version`**, `scripts` (id→output JSON) |
-| `url` | `http(s)://host` | `host`, `port`, `name`, `product` |
-| `screenshot` | URL | image on `data`; title/status/tech/etc in meta |
-| `finding` | `nuclei/<template>/<target>` | `template`, `severity`, `name`, `extracted`, `description`, `tags`, `matcher` |
+| Field | Meaning |
+|---|---|
+| `host` | One IP address established by this observation; absent when unknown. |
+| `name`, `name_role` | One hostname and its relationship to the IP: requested authority, DNS answer, PTR, certificate CN/SAN, or passive mention. |
+| `port`, `proto` | Endpoint port and transport (`tcp`, `udp`, `icmp`, `icmpv6`, `arp`); omitted when unknown or inapplicable. |
+| `url`, `sni`, `http_host` | URL and request authority context, preserving URL path/query case. |
+| `service`, `tls` | Service name and whether TLS is established or specified by the URL. |
+| `source`, `probe` | Worker and specific probe/template that produced the observation. |
+| `info` | Result details, always string → string. Product/version, titles, matchers, and scripts belong here. |
+| `id`, `run_id`, `scan_id`, `parent_id`, `input` | Observation ID, seed lineage, handler invocation, triggering event ID, and triggering subject snapshot. |
 
-`service.product` / `version` is how you *see* what nmap (or anything else) fingerprinted. `nmap-svc` fills it; another tool can emit the same `service` shape.
+An event represents one observed relationship. DNS emits each name/address pair separately. Certificate names are recorded against the server that presented them, without asserting they resolve there. Scanners read the actual response IP; they do not copy an ancestor's address or choose an entry from an alias list. `input` preserves the requested context if the result differs.
+
+The existing kinds and `value` locators remain:
+
+| Kind | Value |
+|---|---|
+| `domain` | apex for dictionary enumeration (`example.com`) |
+| `fqdn` | hostname |
+| `netblock` | CIDR (`10.0.0.0/24`) |
+| `ip` | IP address |
+| `port` | `host:port` (IPv6 bracketed) |
+| `service` | `host:port/service` |
+| `url`, `screenshot` | HTTP(S) URL |
+| `finding` | `nuclei/<template>/<input-value>` |
+
+`value` alone is not an entity key: a named endpoint can have several responding IPs, and the same port number can use TCP or UDP. `meta` retains workflow gates (`allow`, `deny`, `scope`, `profile`, `alive`) and compatibility details. New consumers use the typed fields and `info`.
 
 HTTP tools do **not** listen on raw `port`. `as-url` translates `service` names like `http`/`https` into `url`. httpx and `nuclei` subscribe to `url`. `nuclei-net` takes non-web `service` events (`ssh`, `ssl`, …) and passes `host:port`.
 
@@ -75,10 +89,10 @@ HTTP tools do **not** listen on raw `port`. `as-url` translates `service` names 
 | `nmap-discover` | `netblock`, `fqdn`, `ip` | live `ip`, live `fqdn` | YAML `-sn`; sets `meta.alive` |
 | `dnsx` | `domain` | `fqdn` | dictionary (`wordlists/dns.txt`) |
 | `ctl` | `domain` | `fqdn` | Shodan CT hostnames, kept only if dnsx sees A/AAAA |
-| `nmap-quick` | live `ip`, live `fqdn` | `port` | YAML `--top-ports 1000`; `-Pn`; any tool that sets `alive` |
+| `nmap-quick` | live `ip`, live `fqdn` | `port` | YAML `--top-ports 250`; `-Pn`; any tool that sets `alive` |
 | `nmap-http` | live `ip`, live `fqdn` | `port` | YAML; 25 common HTTP/S ports; same live gate |
 | `nmap-full` | **live `ip`** | `port` | YAML `-sT -sU`; all TCP + common UDP; one scan per address |
-| `nmap-svc` | `port` | `service` | YAML; `-sV` plus `default,safe,discovery` scripts |
+| `nmap-svc` | `port` | `service` | YAML; matching TCP/UDP scan, `-sV` plus `default,safe,discovery` scripts; preserves TLS tunnel |
 | `tlsx` | `port` | `fqdn` | CN/SAN on every open port, not just 443 |
 | `as-url` | `service` | `url` | only if nmap says http(s) |
 | `httpx` | `url` | `screenshot` | YAML profile; png/jpeg on `data` plus title/status/tech/cdn/asn/jarm |
@@ -98,19 +112,24 @@ By default every subscriber runs. Optionally restrict a seed (children inherit t
 ```bash
 docker compose run --rm seed --deny nmap-full,nuclei ip 192.168.1.1
 docker compose run --rm seed --profile web --scope web1 ip 192.168.1.1
+docker compose run --rm seed --run assessment-1 --scope assessment-1 --proto udp port 192.168.1.1:53
 ```
 
 `--allow` / `--deny` are comma tool names. `--profile` loads `profiles/runs/<name>.yaml` (or a path). `--scope` is added to the dedup key so the same value can be seeded again under another kit. Empty allow/deny means all tools. In production, set the same `allow` / `deny` / `scope` meta yourself.
 
+`--run` groups seed lineages for reporting; it defaults to the seed's generated ID. A new run ID alone does not force rescanning: choose a new scope for independent scan work. `--proto tcp|udp` applies to port seeds; the default is TCP.
+
 ## Report (PoC only)
 
-Stand-in sink: POST `REPORT_URL` or `reports/events.jsonl` + `report.html`. The file sink resets on startup. Service rows show **product/version** and NSE `scripts` JSON. For a durable feed, use `export`.
+Stand-in sink: POST `REPORT_URL` or `reports/events.jsonl` + `report.html`. The file sink resets on startup. Rows show endpoint identity, lineage, and `info`, including product/version and NSE scripts. This is still an observation viewer, not a normalized database. For a durable feed, use `export`.
 
 ## JSONL export
 
 `export` is an append-only pipe of the bus. Durable name **`export`** (gate `--allow` / `--deny` must use that, not `report`). Default file `exports/events.jsonl`; `EXPORT_FILE=-` writes stdout. It does not truncate on restart; JetStream resumes from the last ack.
 
-Each line is one event envelope (`id`, `kind`, `value`, `source`, `parent_id`, `observed_at`, `meta`, optional `data` / `media_type`). Correlate with `parent_id` (tree) plus `kind`+`value`. `meta` is string→string; lists are comma-joined. Screenshot `data` is standard base64; lines can approach the 8MB NATS cap. Dedup is first `(export, kind, value, scope)` per 24h.
+Each line is one versioned observation envelope. Screenshot `data` is standard base64; lines can approach the 8MB NATS cap. `export` and `report` use SDK `Observe: true`, bypassing scanner work dedup so subsequent observations and enrichment survive. Gates still apply. A redelivery can append the same event again; a database sink should commit its upserts and event ID together before returning success.
+
+Use explicit endpoint fields for entity relationships and `parent_id` / `run_id` / `scan_id` for provenance. Do not infer a name × IP × port cross-product from legacy lists. See [consumer guidance and migration notes](event/SCHEMA.md#consumer-contract).
 
 ## Watch
 

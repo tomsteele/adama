@@ -43,9 +43,9 @@ func main() {
 					return nil, err
 				}
 			}
-			evs := parseHits(out, ev)
+			evs, err := parseHits(out, ev)
 			slog.Info("nuclei", "target", u, "findings", len(evs))
-			return evs, nil
+			return evs, err
 		},
 	})
 	if err != nil && ctx.Err() == nil {

@@ -4,12 +4,15 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"strings"
+	"time"
 
 	"adama/event"
 )
 
 type nucleiHit struct {
+	Timestamp        time.Time       `json:"timestamp"`
 	TemplateID       string          `json:"template-id"`
 	MatcherName      json.RawMessage `json:"matcher-name"`
 	ExtractedResults []string        `json:"extracted-results"`
@@ -25,7 +28,7 @@ type nucleiHit struct {
 	} `json:"info"`
 }
 
-func parseHits(stdout []byte, in event.Event) []event.Event {
+func parseHits(stdout []byte, in event.Event) ([]event.Event, error) {
 	var evs []event.Event
 	sc := bufio.NewScanner(bytes.NewReader(stdout))
 	sc.Buffer(make([]byte, 0, 64*1024), 4<<20)
@@ -35,12 +38,24 @@ func parseHits(stdout []byte, in event.Event) []event.Event {
 			continue
 		}
 		var hit nucleiHit
-		if err := json.Unmarshal(line, &hit); err != nil || hit.TemplateID == "" {
+		if line[0] != '{' {
 			continue
 		}
-		evs = append(evs, event.Event{
-			Kind:  event.KindFinding,
-			Value: "nuclei/" + hit.TemplateID + "/" + in.Value,
+		if err := json.Unmarshal(line, &hit); err != nil {
+			return nil, fmt.Errorf("nuclei result: %w", err)
+		}
+		if hit.TemplateID == "" {
+			return nil, fmt.Errorf("nuclei result missing template ID")
+		}
+		t := findingTarget(hit, in)
+		ev := event.Event{
+			SchemaVersion: event.SchemaVersion,
+			Kind:          event.KindFinding,
+			Value:         "nuclei/" + hit.TemplateID + "/" + in.Value,
+			Target:        t,
+			Probe:         hit.TemplateID,
+			Observed:      hit.Timestamp,
+			TLS:           strings.HasPrefix(t.URL, "https://") || hit.Type == "ssl",
 			Meta: map[string]string{
 				"template":    hit.TemplateID,
 				"name":        hit.Info.Name,
@@ -54,12 +69,49 @@ func parseHits(stdout []byte, in event.Event) []event.Event {
 				"ip":          hit.IP,
 				"matched_at":  hit.MatchedAt,
 				"url":         in.Value,
-				"host":        in.Meta["host"],
-				"product":     in.Meta["product"],
+				"host":        t.Host,
 			},
-		})
+		}
+		ev.Info = map[string]string{}
+		for k, v := range ev.Meta {
+			ev.Info[k] = v
+		}
+		evs = append(evs, ev)
 	}
-	return evs
+	return evs, sc.Err()
+}
+
+func findingTarget(hit nucleiHit, in event.Event) event.Target {
+	var t event.Target
+	switch hit.Type {
+	case "http", "headless", "websocket":
+		u := hit.MatchedAt
+		if u == "" {
+			u = in.Value
+		}
+		t, _ = event.URLTarget(u)
+	case "ssl", "tcp", "network":
+		t = in.Target
+		t.Host = "" // The scanner's IP below is authoritative.
+		fromURL, urlErr := event.URLTarget(hit.MatchedAt)
+		if hit.Type == "ssl" && urlErr == nil {
+			t = fromURL
+		} else if h, p, err := event.SplitHostPort(hit.MatchedAt); err == nil {
+			t.Port = p
+			if ip, err := event.CanonIP(h); err == nil {
+				t.Host = ip
+			} else {
+				t.Name, t.NameRole = event.CanonFQDN(h), event.NameRequested
+			}
+		}
+		if hit.Type == "ssl" {
+			t.Proto = event.TCP
+		}
+	}
+	if ip, err := event.CanonIP(hit.IP); err == nil {
+		t.Host = ip
+	}
+	return t
 }
 
 func rawString(raw json.RawMessage) string {

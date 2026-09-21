@@ -31,7 +31,7 @@ func main() {
 		AckWait:  p.Ack(),
 		NeedLive: true,
 		Handle: func(ctx context.Context, ev event.Event) ([]event.Event, error) {
-			args := append(append([]string{}, p.NmapArgs...), "-oX", "-", ev.Value)
+			args := append(p.Args(ev), "-oX", "-", ev.TargetHost())
 			out, err := exec.CommandContext(ctx, "nmap", args...).Output()
 			if err != nil {
 				if x, ok := err.(*exec.ExitError); ok {
@@ -40,12 +40,12 @@ func main() {
 					return nil, err
 				}
 			}
-			addrs, ports, err := nmapx.ParseXML(out)
+			scans, err := nmapx.ParseXML(out)
 			if err != nil {
 				return nil, err
 			}
-			slog.Info("nmap", "tool", p.Name, "host", ev.Value, "addrs", addrs, "ports", ports)
-			return nmapx.Expand(ev, addrs, ports), nil
+			slog.Info("nmap", "tool", p.Name, "host", ev.Value, "results", len(scans))
+			return nmapx.Expand(ev, scans), nil
 		},
 	})
 	if err != nil && ctx.Err() == nil {

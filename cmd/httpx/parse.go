@@ -1,24 +1,31 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
+	"net/url"
 	"os"
 	"os/exec"
 	"strconv"
 	"strings"
+	"time"
 
 	"adama/event"
 )
 
 type result struct {
+	Timestamp       time.Time       `json:"timestamp"`
 	URL             string          `json:"url"`
 	Title           string          `json:"title"`
 	WebServer       string          `json:"webserver"`
 	ContentType     string          `json:"content_type"`
 	Method          string          `json:"method"`
 	Host            string          `json:"host"`
+	HostIP          string          `json:"host_ip"`
+	SNI             string          `json:"sni"`
 	Path            string          `json:"path"`
 	Scheme          string          `json:"scheme"`
 	Location        string          `json:"location"`
@@ -102,16 +109,63 @@ func parseResult(stdout []byte) (result, bool, error) {
 	return r, true, nil
 }
 
+// parseResults retains every address/scheme result returned by the tool.
+func parseResults(stdout []byte) ([]result, error) {
+	var out []result
+	sc := bufio.NewScanner(bytes.NewReader(stdout))
+	sc.Buffer(make([]byte, 64*1024), 16<<20)
+	for sc.Scan() {
+		line := bytes.TrimSpace(sc.Bytes())
+		if len(line) == 0 || line[0] != '{' {
+			continue
+		}
+		r, ok, err := parseResult(line)
+		if err != nil {
+			return nil, fmt.Errorf("httpx result: %w", err)
+		}
+		if ok {
+			out = append(out, r)
+		}
+	}
+	return out, sc.Err()
+}
+
 func toEvent(in event.Event, r result) event.Event {
 	ev := event.Event{
-		Kind:  event.KindScreenshot,
-		Value: in.Value,
-		Meta:  map[string]string{},
+		SchemaVersion: event.SchemaVersion,
+		Kind:          event.KindScreenshot,
+		Value:         in.Value,
+		Meta:          map[string]string{},
 	}
 	if r.URL != "" {
 		ev.Value = r.URL
 	}
-	copyMeta(ev.Meta, in.Meta, "host", "port", "name", "product")
+	ev.Probe = "http-screenshot"
+	ev.Observed = r.Timestamp
+	ev.Target, _ = event.URLTarget(ev.Value)
+	ip, _ := event.CanonIP(r.HostIP)
+	if ip == "" {
+		ip, _ = event.CanonIP(r.Host)
+	}
+	if ip != "" {
+		ev.Host = ip
+	}
+	if r.SNI != "" {
+		ev.SNI = r.SNI
+	}
+	// HTTPX's connected IP identifies its HTTP probe, not an independently
+	// redirected browser navigation. Preserve that boundary explicitly.
+	ev.Meta["endpoint_evidence"] = "http_probe"
+	if r.FinalURL != "" {
+		initial, _ := url.Parse(ev.Value)
+		final, err := url.Parse(r.FinalURL)
+		if err == nil && initial != nil && !strings.EqualFold(initial.Host, final.Host) {
+			ev.Meta["redirect_endpoint"] = "unverified"
+		}
+	}
+	ev.TLS = strings.HasPrefix(ev.URL, "https://")
+	ev.Service = "http"
+	// Never copy an ancestor's IP, product, or port over the response identity.
 	put(ev.Meta, "title", r.Title)
 	put(ev.Meta, "webserver", r.WebServer)
 	put(ev.Meta, "content_type", r.ContentType)
@@ -144,6 +198,15 @@ func toEvent(in event.Event, r result) event.Event {
 	}
 	asnMeta(r.ASN, ev.Meta)
 	attachShot(&ev, r)
+	ev.Info = map[string]string{}
+	for k, v := range ev.Meta {
+		ev.Info[k] = v
+	}
+	if len(ev.Data) == 0 {
+		ev.Info["screenshot_status"] = "missing"
+	} else {
+		ev.Info["screenshot_status"] = "captured"
+	}
 	return ev
 }
 
@@ -169,12 +232,6 @@ func mediaType(b []byte) string {
 func put(m map[string]string, k, v string) {
 	if v != "" {
 		m[k] = v
-	}
-}
-
-func copyMeta(dst, src map[string]string, keys ...string) {
-	for _, k := range keys {
-		put(dst, k, src[k])
 	}
 }
 
