@@ -2,15 +2,16 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"os"
-	"os/exec"
 	"os/signal"
 	"strconv"
 	"syscall"
 
 	"adama/event"
 	"adama/internal/nmapx"
+	"adama/internal/toolrun"
 	"adama/sdk"
 )
 
@@ -27,29 +28,23 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	err = sdk.Run(ctx, sdk.Config{
-		Name:    p.Name,
-		Kinds:   p.EventKinds(),
-		AckWait: p.Ack(),
+		RequiredTools: []string{"nmap"},
+		Name:          p.Name,
+		Kinds:         p.EventKinds(),
+		AckWait:       p.Ack(),
 		Handle: func(ctx context.Context, ev event.Event) ([]event.Event, error) {
 			host, port := ev.TargetHost(), ev.Port
 			if host == "" || port == 0 {
 				return nil, nil
 			}
 			args := append(p.Args(ev), "-p", strconv.Itoa(port), "-oX", "-", host)
-			out, err := exec.CommandContext(ctx, "nmap", args...).Output()
-			if err != nil {
-				if x, ok := err.(*exec.ExitError); ok {
-					slog.Warn("nmap-svc exit", "err", err, "stderr", string(x.Stderr))
-				} else {
-					return nil, err
-				}
-			}
+			out, runErr := toolrun.Run(ctx, "nmap", args, nil)
 			svcs, err := nmapx.ParseServices(out)
 			if err != nil {
-				return nil, err
+				return nil, errors.Join(runErr, err)
 			}
 			slog.Info("nmap-svc", "target", ev.Value, "services", len(svcs), "scripts", scriptCount(svcs))
-			return nmapx.ServiceEvents(ev, svcs), nil
+			return nmapx.ServiceEvents(ev, svcs), runErr
 		},
 	})
 	if err != nil && ctx.Err() == nil {

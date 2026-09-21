@@ -2,7 +2,7 @@
 
 A reactive passive and active discovery process.
 
-Tools subscribe themselves. Events live 24h. Scanner work is deduplicated per tool, scope, and target identity. Observation sinks receive every event.
+Tools subscribe themselves. Events and work state persist until explicit cleanup. Scanner work is identified by tool, scope, and target; observation sinks receive distinct events. Durable leases, saved output batches, and finite execution budgets handle worker replacement. See [execution, recovery, and rollout](sdk/WORKFLOW.md).
 
 ```mermaid
 flowchart LR
@@ -12,6 +12,8 @@ flowchart LR
   nmapDiscover -->|fqdn| events
   events --> dnsx
   events --> ctl
+  events --> resolve
+  resolve -->|fqdn with IP| events
   dnsx -->|fqdn| events
   ctl -->|fqdn| events
   events --> nmapQuick[nmap-quick]
@@ -24,6 +26,8 @@ flowchart LR
   events --> tlsx
   nmapSvc -->|service| events
   tlsx -->|fqdn| events
+  events --> reconcile
+  reconcile -->|named port| events
   events --> asUrl[as-url]
   asUrl -->|url| events
   events --> httpx
@@ -89,6 +93,8 @@ HTTP tools do **not** listen on raw `port`. `as-url` translates `service` names 
 | `nmap-discover` | `netblock`, `fqdn`, `ip` | live `ip`, live `fqdn` | YAML `-sn`; sets `meta.alive` |
 | `dnsx` | `domain` | `fqdn` | dictionary (`wordlists/dns.txt`) |
 | `ctl` | `domain` | `fqdn` | Shodan CT hostnames, kept only if dnsx sees A/AAAA |
+| `resolve` | `domain`, unresolved `fqdn` | `fqdn` | explicit A/AAAA bindings, including the domain apex |
+| `reconcile` | bound `fqdn`, open `port` | named `port` | persistent join in either arrival order; preserves IP, transport, scope, and gates |
 | `nmap-quick` | live `ip`, live `fqdn` | `port` | YAML `--top-ports 250`; `-Pn`; any tool that sets `alive` |
 | `nmap-http` | live `ip`, live `fqdn` | `port` | YAML; 25 common HTTP/S ports; same live gate |
 | `nmap-full` | **live `ip`** | `port` | YAML `-sT -sU`; all TCP + common UDP; one scan per address |
@@ -101,11 +107,11 @@ HTTP tools do **not** listen on raw `port`. `as-url` translates `service` names 
 | `report` | `screenshot`, `service`, `finding` | — | PoC HTML sink |
 | `export` | all kinds | — | append-only JSONL (`EXPORT_FILE`) |
 
-`-Pn` scanners (`nmap-quick`, `nmap-http`, `nmap-full`) only run on `ip`/`fqdn` with `meta.alive=true`. `nmap-discover` is the current producer; another liveness tool can emit the same shape. Seed/ctl names are not alive. Full stays IP-only so ten vhosts share one `-sT -sU`. Quick and http also take each live name so SNI and `:8443` still happen per vhost. `tlsx` follows every open `port`.
+`-Pn` scanners (`nmap-quick`, `nmap-http`, `nmap-full`) only run on `ip`/`fqdn` with `meta.alive=true`. `resolve` establishes name/address pairs before `nmap-discover` probes each specific IP. DNS answers are not liveness evidence. Full stays IP-only so ten vhosts share one `-sT -sU`. Quick/http take live names; `reconcile` also pairs late names with previously discovered ports outside those profiles. `tlsx` follows every open `port`.
 
 ## Seeding (PoC only)
 
-`seed` is a demo injector. `seed domain example.com` feeds dnsx and `ctl`. `seed fqdn` is a single name (no dictionary). `seed netblock` is not exploded here — `nmap-discover` generates live IPs. `seed port 192.168.1.1:22` (or `seed 192.168.1.1:22`) skips discovery and goes straight to `nmap-svc`.
+`seed` is a demo injector. `seed domain example.com` feeds dictionary/CT discovery and resolves the apex. `seed fqdn` resolves a single name (no dictionary). `seed netblock` is not exploded here — `nmap-discover` generates live IPs. `seed port 192.168.1.1:22` (or `seed 192.168.1.1:22`) asserts a known endpoint and goes straight to `nmap-svc`.
 
 By default every subscriber runs. Optionally restrict a seed (children inherit the same gate):
 
@@ -121,16 +127,26 @@ docker compose run --rm seed --run assessment-1 --scope assessment-1 --proto udp
 
 ## Report (PoC only)
 
-Stand-in sink: POST `REPORT_URL` or `reports/events.jsonl` + `report.html`. The file sink resets on startup. Rows show endpoint identity, lineage, and `info`, including product/version and NSE scripts. This is still an observation viewer, not a normalized database. For a durable feed, use `export`.
+Stand-in sink: POST `REPORT_URL` or `reports/events.jsonl` + `report.html`. Startup preserves JSONL and rebuilds HTML. Rows show endpoint identity, lineage, and `info`, including product/version and NSE scripts. This is still an observation viewer, not a normalized database. API requests carry the event ID as `Idempotency-Key`. For an all-kind feed, use `export`.
 
 ## JSONL export
 
 `export` is an append-only pipe of the bus. Durable name **`export`** (gate `--allow` / `--deny` must use that, not `report`). Default file `exports/events.jsonl`; `EXPORT_FILE=-` writes stdout. It does not truncate on restart; JetStream resumes from the last ack.
 
-Each line is one versioned observation envelope. Screenshot `data` is standard base64; lines can approach the 8MB NATS cap. `export` and `report` use SDK `Observe: true`, bypassing scanner work dedup so subsequent observations and enrichment survive. Gates still apply. A redelivery can append the same event again; a database sink should commit its upserts and event ID together before returning success.
+Each line is one versioned observation envelope. Screenshot `data` is standard base64; lines can approach the 8MB NATS cap. `export` and `report` use SDK `Observe: true`, tracking event IDs instead of scanner target identities so subsequent observations and enrichment survive. Gates still apply. A crash between a sink write and recording completion can append the same event again; a database sink should commit its upserts and event ID together before returning success.
 
 Use explicit endpoint fields for entity relationships and `parent_id` / `run_id` / `scan_id` for provenance. Do not infer a name × IP × port cross-product from legacy lists. See [consumer guidance and migration notes](event/SCHEMA.md#consumer-contract).
 
 ## Watch
 
 `watch` is a live tail of who is working. SDK publishes `start` / `done` / `error` / `skip` on `adama.activity` (core NATS, not the EVENTS stream). Browser: `http://127.0.0.1:8080`. Terminal: `docker compose logs -f watch`.
+
+Durable task outcomes and shared tool faults are available independently of watch:
+
+```bash
+docker compose run --rm work tasks
+docker compose run --rm work tools
+docker compose run --rm work resume httpx  # after repairing the tool
+```
+
+Ordinary failures stop after one execution. Explicitly transient failures get at most three executions by default; publication retries saved output separately. Resuming a repaired tool releases pending work without reopening terminal tasks. See [budgets, configuration, and migration requirements](sdk/WORKFLOW.md) before upgrading an existing cluster.

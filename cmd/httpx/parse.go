@@ -3,12 +3,13 @@ package main
 import (
 	"bufio"
 	"bytes"
-	"context"
 	"encoding/json"
 	"fmt"
+	"image"
+	_ "image/jpeg"
+	_ "image/png"
 	"net/url"
 	"os"
-	"os/exec"
 	"strconv"
 	"strings"
 	"time"
@@ -45,41 +46,6 @@ type result struct {
 	ScreenshotBytes []byte          `json:"screenshot_bytes"`
 	ScreenshotPath  string          `json:"screenshot_path"`
 	ASN             json.RawMessage `json:"asn"`
-}
-
-func runHttpx(ctx context.Context, args []string) ([]byte, []byte, error) {
-	cmd := exec.CommandContext(ctx, "httpx", args...)
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-	out, err := cmd.Output()
-	return out, stderr.Bytes(), err
-}
-
-func chromeMissing(stderr []byte) bool {
-	s := string(stderr)
-	return strings.Contains(s, "chrome browser is not installed") ||
-		strings.Contains(s, "Could not create runner")
-}
-
-func stripShot(args []string) []string {
-	skipNext := 0
-	var out []string
-	for _, a := range args {
-		if skipNext > 0 {
-			skipNext--
-			continue
-		}
-		switch a {
-		case "-ss", "-screenshot", "-system-chrome", "-no-screenshot-full-page",
-			"-esb", "-exclude-screenshot-bytes":
-			continue
-		case "-ho", "-headless-options", "-st", "-screenshot-timeout", "-sid", "-screenshot-idle":
-			skipNext = 1
-			continue
-		}
-		out = append(out, a)
-	}
-	return out
 }
 
 func firstJSON(b []byte) []byte {
@@ -121,7 +87,7 @@ func parseResults(stdout []byte) ([]result, error) {
 		}
 		r, ok, err := parseResult(line)
 		if err != nil {
-			return nil, fmt.Errorf("httpx result: %w", err)
+			return out, fmt.Errorf("httpx result: %w", err)
 		}
 		if ok {
 			out = append(out, r)
@@ -213,20 +179,22 @@ func toEvent(in event.Event, r result) event.Event {
 func attachShot(ev *event.Event, r result) {
 	b := r.ScreenshotBytes
 	if len(b) == 0 && r.ScreenshotPath != "" {
-		b, _ = os.ReadFile(r.ScreenshotPath)
+		var err error
+		b, err = os.ReadFile(r.ScreenshotPath)
+		if err != nil {
+			ev.Meta["screenshot_error"] = err.Error()
+		}
 	}
 	if len(b) == 0 {
 		return
 	}
-	ev.Data = b
-	ev.MediaType = mediaType(b)
-}
-
-func mediaType(b []byte) string {
-	if bytes.HasPrefix(b, []byte{0x89, 'P', 'N', 'G'}) {
-		return "image/png"
+	_, format, err := image.DecodeConfig(bytes.NewReader(b))
+	if err != nil || (format != "png" && format != "jpeg") {
+		ev.Meta["screenshot_error"] = "invalid PNG/JPEG screenshot"
+		return
 	}
-	return "image/jpeg"
+	ev.Data = b
+	ev.MediaType = "image/" + format
 }
 
 func put(m map[string]string, k, v string) {

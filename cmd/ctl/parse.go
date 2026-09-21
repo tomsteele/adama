@@ -8,10 +8,10 @@ import (
 	"adama/internal/dnsresult"
 )
 
-func parseHostnames(body []byte, domain string) []event.Event {
+func parseHostnames(body []byte, domain string) ([]event.Event, error) {
 	var names []string
-	if json.Unmarshal(body, &names) != nil {
-		return nil
+	if err := json.Unmarshal(body, &names); err != nil {
+		return nil, err
 	}
 	domain = event.CanonFQDN(domain)
 	suffix := "." + domain
@@ -41,14 +41,11 @@ func parseHostnames(body []byte, domain string) []event.Event {
 			Meta:          map[string]string{"parent": domain, "via": "ctl"},
 		})
 	}
-	return evs
+	return evs, nil
 }
 
 func keepResolved(evs []event.Event, stdout []byte) ([]event.Event, error) {
 	resolved, err := dnsresult.Parse(stdout, "ctl", "")
-	if err != nil {
-		return nil, err
-	}
 	names := map[string]event.Event{}
 	for _, ev := range evs {
 		names[ev.Value] = ev
@@ -62,5 +59,5 @@ func keepResolved(evs []event.Event, stdout []byte) ([]event.Event, error) {
 			out = append(out, ev)
 		}
 	}
-	return out, nil
+	return out, err
 }

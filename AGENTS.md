@@ -1,17 +1,19 @@
 # Adama
 
-Reactive scan bus. Tools self-subscribe on NATS JetStream (`EVENTS`, 24h). Scanner dedup includes `(tool, kind, value, scope)` and explicit endpoint identity; observation sinks bypass work dedup.
+Reactive scan bus. Tools self-subscribe on NATS JetStream (`EVENTS`, retained until explicit cleanup). Durable work identity includes `(tool, kind, value, scope)` and explicit endpoint identity; observation sinks use event IDs.
 
 Read `README.md` for the event schema and tool graph. This file is how to change the code.
 
 ## Layout
 
 - `event/` — kinds, v2 observation envelope/target, `SCHEMA.md`, `Live` / `MarkLive`, activity
-- `sdk/` — connect, subscribe, dedup, gate (`allow`/`deny`/`NeedLive`), activity notes
+- `sdk/` — connect, subscribe, durable work leases/outboxes/budgets, gates, activity; see `sdk/WORKFLOW.md`
 - `cmd/<tool>/` — one worker each; nmap-quick/http/full share `cmd/nmap` + a profile; `export` is the durable JSONL sink
 - `profiles/*.yaml` — tool flags (`NMAP_PROFILE`, `HTTPX_PROFILE`, `NUCLEI_PROFILE`)
 - `profiles/runs/` — seed `--profile` kits
 - `internal/nmapx`, `internal/asurl` — shared parse / HTTP detect
+- `internal/reconcile`, `cmd/reconcile`, `cmd/resolve` — persistent name/endpoint joins and A/AAAA resolution
+- `internal/toolrun`, `cmd/work` — subprocess failure classification and task/tool status
 
 ## Conventions
 
@@ -25,6 +27,8 @@ Read `README.md` for the event schema and tool graph. This file is how to change
 - `ctl` filters CT names with dnsx itself; `dnsx` worker is domain wordlist only.
 - Nmap emits open ports only (`--open`).
 - Seed `allow`/`deny`/`scope` inherit to children. Gate runs before the KV lock.
+- Errors are terminal unless explicitly retryable; never swallow a subprocess failure or clear task state to retry. Shared configuration faults pause the tool. Persist partial observations with the failure.
+- Terminal task state has no TTL. Use a new scope for an explicit rescan; run IDs alone do not reset budgets. Do not automatically recycle failed work.
 
 ## Commands
 

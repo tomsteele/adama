@@ -2,14 +2,15 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"os"
-	"os/exec"
 	"os/signal"
 	"syscall"
 
 	"adama/event"
 	"adama/internal/nmapx"
+	"adama/internal/toolrun"
 	"adama/sdk"
 )
 
@@ -26,26 +27,20 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	err = sdk.Run(ctx, sdk.Config{
-		Name:     p.Name,
-		Kinds:    p.EventKinds(),
-		AckWait:  p.Ack(),
-		NeedLive: true,
+		RequiredTools: []string{"nmap"},
+		Name:          p.Name,
+		Kinds:         p.EventKinds(),
+		AckWait:       p.Ack(),
+		NeedLive:      true,
 		Handle: func(ctx context.Context, ev event.Event) ([]event.Event, error) {
 			args := append(p.Args(ev), "-oX", "-", ev.TargetHost())
-			out, err := exec.CommandContext(ctx, "nmap", args...).Output()
-			if err != nil {
-				if x, ok := err.(*exec.ExitError); ok {
-					slog.Warn("nmap exit", "tool", p.Name, "err", err, "stderr", string(x.Stderr))
-				} else {
-					return nil, err
-				}
-			}
+			out, runErr := toolrun.Run(ctx, "nmap", args, nil)
 			scans, err := nmapx.ParseXML(out)
 			if err != nil {
-				return nil, err
+				return nil, errors.Join(runErr, err)
 			}
 			slog.Info("nmap", "tool", p.Name, "host", ev.Value, "results", len(scans))
-			return nmapx.Expand(ev, scans), nil
+			return nmapx.Expand(ev, scans), runErr
 		},
 	})
 	if err != nil && ctx.Err() == nil {

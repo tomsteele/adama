@@ -8,7 +8,10 @@ import (
 
 func TestParseHostnames(t *testing.T) {
 	raw := []byte(`["WWW.Example.COM","www.example.com","*.dev.example.com","other.com","mail.example.com"]`)
-	got := parseHostnames(raw, "Example.COM")
+	got, err := parseHostnames(raw, "Example.COM")
+	if err != nil {
+		t.Fatal(err)
+	}
 	want := map[string]bool{"www.example.com": true, "mail.example.com": true}
 	if len(got) != len(want) {
 		t.Fatalf("%+v", got)
@@ -24,7 +27,10 @@ func TestParseHostnames(t *testing.T) {
 }
 
 func TestKeepResolved(t *testing.T) {
-	in := parseHostnames([]byte(`["www.example.com","dead.example.com"]`), "example.com")
+	in, err := parseHostnames([]byte(`["www.example.com","dead.example.com"]`), "example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
 	got, err := keepResolved(in, []byte(`{"host":"www.example.com","a":["1.2.3.4"]}`))
 	if err != nil {
 		t.Fatal(err)

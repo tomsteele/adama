@@ -16,12 +16,27 @@ RUN CGO_ENABLED=0 go build -o /out/seed ./cmd/seed \
  && CGO_ENABLED=0 go build -o /out/export ./cmd/export \
  && CGO_ENABLED=0 go build -o /out/watch ./cmd/watch \
  && CGO_ENABLED=0 go build -o /out/ctl ./cmd/ctl
+RUN CGO_ENABLED=0 go build -o /out/work ./cmd/work
+RUN CGO_ENABLED=0 go build -o /out/reconcile ./cmd/reconcile \
+ && CGO_ENABLED=0 go build -o /out/resolve ./cmd/resolve
 
 FROM alpine:3.21 AS seed
 COPY --from=build /out/seed /usr/local/bin/seed
 COPY profiles /profiles
 ENV SEED_RUNS=/profiles/runs
 ENTRYPOINT ["seed"]
+
+FROM alpine:3.21 AS work
+COPY --from=build /out/work /usr/local/bin/work
+ENTRYPOINT ["work"]
+
+FROM alpine:3.21 AS reconcile
+COPY --from=build /out/reconcile /usr/local/bin/reconcile
+ENTRYPOINT ["reconcile"]
+
+FROM projectdiscovery/dnsx:latest AS resolve
+COPY --from=build /out/resolve /usr/local/bin/resolve
+ENTRYPOINT ["resolve"]
 
 FROM alpine:3.21 AS nmap
 RUN apk add --no-cache nmap nmap-scripts

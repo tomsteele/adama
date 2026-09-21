@@ -4,9 +4,30 @@ services:
     command: ["-c", "/etc/nats/nats.conf"]
     volumes:
       - ./nats.conf:/etc/nats/nats.conf:ro
+      - nats-data:/data
     ports:
       - "4222:4222"
       - "8222:8222"
+
+  resolve:
+    build:
+      context: .
+      target: resolve
+    environment:
+      NATS_URL: nats://nats:4222
+    depends_on: [nats]
+    restart: unless-stopped
+    stop_grace_period: 30s
+
+  reconcile:
+    build:
+      context: .
+      target: reconcile
+    environment:
+      NATS_URL: nats://nats:4222
+    depends_on: [nats]
+    restart: unless-stopped
+    stop_grace_period: 30s
 
   nmap-discover:
     build:
@@ -18,6 +39,7 @@ services:
       NMAP_PROFILE: /profiles/nmap-discover.yaml
     depends_on: [nats]
     restart: unless-stopped
+    stop_grace_period: 30s
 
   nmap-quick:
     build:
@@ -28,6 +50,7 @@ services:
       NMAP_PROFILE: /profiles/nmap-quick.yaml
     depends_on: [nats]
     restart: unless-stopped
+    stop_grace_period: 30s
 
   nmap-http:
     build:
@@ -38,6 +61,7 @@ services:
       NMAP_PROFILE: /profiles/nmap-http.yaml
     depends_on: [nats]
     restart: unless-stopped
+    stop_grace_period: 30s
 
   nmap-full:
     build:
@@ -48,6 +72,7 @@ services:
       NMAP_PROFILE: /profiles/nmap-full.yaml
     depends_on: [nats]
     restart: unless-stopped
+    stop_grace_period: 30s
 
   nmap-svc:
     build:
@@ -59,6 +84,7 @@ services:
       NMAP_PROFILE: /profiles/nmap-svc.yaml
     depends_on: [nats]
     restart: unless-stopped
+    stop_grace_period: 30s
 
   as-url:
     build:
@@ -69,6 +95,7 @@ services:
       NATS_URL: nats://nats:4222
     depends_on: [nats]
     restart: unless-stopped
+    stop_grace_period: 30s
 
   dnsx:
     build:
@@ -78,6 +105,7 @@ services:
       NATS_URL: nats://nats:4222
     depends_on: [nats]
     restart: unless-stopped
+    stop_grace_period: 30s
 
   ctl:
     build:
@@ -87,6 +115,7 @@ services:
       NATS_URL: nats://nats:4222
     depends_on: [nats]
     restart: unless-stopped
+    stop_grace_period: 30s
 
   tlsx:
     build:
@@ -96,6 +125,7 @@ services:
       NATS_URL: nats://nats:4222
     depends_on: [nats]
     restart: unless-stopped
+    stop_grace_period: 30s
 
   httpx:
     build:
@@ -109,6 +139,7 @@ services:
       - ./screenshots:/screenshots
     depends_on: [nats]
     restart: unless-stopped
+    stop_grace_period: 30s
 
   nuclei:
     build:
@@ -119,6 +150,7 @@ services:
       NUCLEI_PROFILE: /profiles/nuclei.yaml
     depends_on: [nats]
     restart: unless-stopped
+    stop_grace_period: 30s
 
   nuclei-net:
     build:
@@ -129,6 +161,7 @@ services:
       NUCLEI_PROFILE: /profiles/nuclei-net.yaml
     depends_on: [nats]
     restart: unless-stopped
+    stop_grace_period: 30s
 
   report:
     build:
@@ -141,6 +174,7 @@ services:
       - ./reports:/reports
     depends_on: [nats]
     restart: unless-stopped
+    stop_grace_period: 30s
 
   export:
     build:
@@ -153,6 +187,7 @@ services:
       - ./exports:/exports
     depends_on: [nats]
     restart: unless-stopped
+    stop_grace_period: 30s
 
   watch:
     build:
@@ -165,6 +200,7 @@ services:
       - "8080:8080"
     depends_on: [nats]
     restart: unless-stopped
+    stop_grace_period: 30s
 
   seed:
     build:
@@ -175,6 +211,15 @@ services:
     depends_on: [nats]
     profiles: ["seed"]
 
+  work:
+    build:
+      context: .
+      target: work
+    environment:
+      NATS_URL: nats://nats:4222
+    depends_on: [nats]
+    profiles: ["ops"]
+
   dev:
     image: golang:1.26-bookworm
     working_dir: /workspace
@@ -184,3 +229,6 @@ services:
       NATS_URL: nats://nats:4222
     command: sleep infinity
     depends_on: [nats]
+
+volumes:
+  nats-data:

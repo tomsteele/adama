@@ -26,5 +26,8 @@ func appendJSONL(file string, ev event.Event) error {
 	}
 	defer f.Close()
 	_, err = f.Write(line)
-	return err
+	if err != nil {
+		return err
+	}
+	return f.Sync()
 }

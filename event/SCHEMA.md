@@ -111,7 +111,7 @@ TLSX attempts TCP TLS even when triggered by an open UDP port, so its results us
 
 ## Consumer contract
 
-A reporting worker subscribes with `sdk.Config{Observe: true}` and its own durable name. This bypasses scanner work dedup but retains subscription filters, gates, acknowledgements, and bounded delivery attempts. Use an empty `Kinds` list to observe every existing kind. Include the reporter in any seed allowlist.
+A reporting worker subscribes with `sdk.Config{Observe: true}` and its own durable name. This uses event-ID work identity instead of scanner target identity, retaining filters, gates, acknowledgements, and bounded execution attempts. Use an empty `Kinds` list to observe every existing kind. Include the reporter in any seed allowlist.
 
 In a database transaction, record the observation by `id` and upsert the supported subject relationships. Commit before the handler returns success. Redelivery can repeat an ID; a separate invocation can produce a different ID for the same fact. Observation idempotency and entity upserts belong in that consumer.
 
@@ -128,14 +128,14 @@ Suggested entity identities within an assessment/scope:
 
 Keep unresolved names without fabricating an endpoint. Preserve evidence roles and timestamps; later arrival does not necessarily mean later observation. Do not overwrite known identity with missing fields, infer all IP/port combinations from alias lists, or merge findings solely on `value` (multiple matchers can share it).
 
-The existing HTML reporter is still a PoC viewer; this change supplies the observation feed for a normalized sink, not that database. Observations also do not certify scan completeness: a handler can produce no findings, and durable task outcomes, recovery, late-name/port joining, and failure classification remain separate workflow work. No new retry loop is added; JetStream's existing per-message `MaxDeliver: 5` remains. This is not yet a global retry budget across newly emitted messages for the same logical task.
+The existing HTML reporter is still a PoC viewer; the observation feed supports a normalized sink, not that database. Observations alone do not certify scan completeness. Durable task outcomes, bounded execution budgets, saved-output recovery, failure classification, and late-name/port joins are described in [the workflow contract](../sdk/WORKFLOW.md). Task state is separate from the existing event kinds.
 
 ## Compatibility and rollout
 
 Legacy `meta` fields remain readable. Canonicalization copies result details into `info` and promotes explicit singular legacy address/port fields when possible. It never chooses an address from `ips`/`fqdns` lists. Legacy observations without trustworthy identity or lineage cannot be repaired by the schema; unknown fields stay absent. Native v2 records treat the typed fields as authoritative and do not import a missing IP from compatibility metadata.
 
-Scanner dedup keys are now hashes of tool, kind, value, scope, host, name, name role, port, protocol, SNI, HTTP Host, and TLS. The key format is `v2/<sha256>`, which supports URLs and IPv6 safely and keeps separate backends, transports, and HTTP/TLS work distinct. Result-detail enrichment does not change a scanner work key. Report/export skip this work dedup entirely.
+Scanner work keys are hashes of tool, kind, value, scope, host, name, name role, port, protocol, SNI, HTTP Host, and TLS. The key format is `v2/<sha256>`, which supports URLs and IPv6 safely and keeps separate backends, transports, and HTTP/TLS work distinct. Result-detail enrichment does not change a scanner work key. Report/export use `(tool, event ID)` work identity instead.
 
 `run_id` groups provenance; `meta.scope` separates work. Reusing a scope across run IDs can reuse already-completed work. Choose a new scope for an independent assessment.
 
-Existing pre-v2 KV keys do not match the new keys. Coordinate worker upgrades; replaying old events through upgraded scanners can schedule work again. This change does not replay, clear, or migrate live NATS state. Existing retention and consumer start policies still apply. A newly created sink is not automatically a historical replay of the entire stream.
+Existing pre-v2 KV keys do not match the new keys, and old claim markers cannot prove completion in the new task store. Coordinate worker upgrades; replaying old events can schedule work again. New consumers now read retained history, and incompatible existing durable settings fail startup for explicit migration. The code changes do not clear or migrate live NATS state. See [retention and rollout](../sdk/WORKFLOW.md#retention-and-rollout).

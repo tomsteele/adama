@@ -2,14 +2,16 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"os"
-	"os/exec"
 	"os/signal"
 	"syscall"
 
 	"adama/event"
 	"adama/internal/nmapx"
+	"adama/internal/reconcile"
+	"adama/internal/toolrun"
 	"adama/sdk"
 )
 
@@ -26,28 +28,28 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	err = sdk.Run(ctx, sdk.Config{
-		Name:    p.Name,
-		Kinds:   p.EventKinds(),
-		AckWait: p.Ack(),
+		RequiredTools: []string{"nmap"},
+		Name:          p.Name,
+		Kinds:         p.EventKinds(),
+		AckWait:       p.Ack(),
+		Accept: func(ev event.Event) bool {
+			return !event.Live(ev) && (ev.Kind != event.KindFQDN || reconcile.BoundName(ev))
+		},
 		Handle: func(ctx context.Context, ev event.Event) ([]event.Event, error) {
 			if event.Live(ev) {
 				return nil, nil
 			}
-			args := append(p.Args(ev), "-oX", "-", ev.TargetHost())
-			out, err := exec.CommandContext(ctx, "nmap", args...).Output()
-			if err != nil {
-				if x, ok := err.(*exec.ExitError); ok {
-					slog.Warn("nmap-discover exit", "tool", p.Name, "err", err, "stderr", string(x.Stderr))
-				} else {
-					return nil, err
-				}
+			if ev.Kind == event.KindFQDN && !reconcile.BoundName(ev) {
+				return nil, nil
 			}
+			args := append(p.Args(ev), "-oX", "-", ev.TargetHost())
+			out, runErr := toolrun.Run(ctx, "nmap", args, nil)
 			hosts, err := nmapx.ParseDiscovery(out)
 			if err != nil {
-				return nil, err
+				return nil, errors.Join(runErr, err)
 			}
 			slog.Info("nmap-discover", "kind", ev.Kind, "value", ev.Value, "generated_ips", len(hosts))
-			return nmapx.DiscoverEvents(ev, hosts), nil
+			return nmapx.DiscoverEvents(ev, hosts), runErr
 		},
 	})
 	if err != nil && ctx.Err() == nil {

@@ -45,21 +45,22 @@ func TestDeliverFile(t *testing.T) {
 	}
 }
 
-func TestResetFile(t *testing.T) {
+func TestRestartPreservesFile(t *testing.T) {
 	dir := t.TempDir()
 	p := filepath.Join(dir, "events.jsonl")
-	if err := os.WriteFile(p, []byte("{\"kind\":\"port\"}\n"), 0o644); err != nil {
+	old := []byte("{\"kind\":\"service\",\"value\":\"example.com:443/https\"}\n")
+	if err := os.WriteFile(p, old, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := resetFile(p); err != nil {
+	if err := initFile(p); err != nil {
 		t.Fatal(err)
 	}
 	b, err := os.ReadFile(p)
-	if err != nil || len(b) != 0 {
+	if err != nil || string(b) != string(old) {
 		t.Fatalf("jsonl %q %v", b, err)
 	}
 	html, err := os.ReadFile(filepath.Join(dir, "report.html"))
-	if err != nil || !strings.Contains(string(html), "no events yet") {
+	if err != nil || !strings.Contains(string(html), "example.com:443/https") {
 		t.Fatalf("html %s %v", html, err)
 	}
 }

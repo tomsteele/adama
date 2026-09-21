@@ -76,7 +76,23 @@ func writeHTML(jsonl string) error {
 		return err
 	}
 	html := filepath.Join(filepath.Dir(jsonl), "report.html")
-	return os.WriteFile(html, buf.Bytes(), 0o644)
+	f, err := os.CreateTemp(filepath.Dir(jsonl), ".report-*.html")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(f.Name())
+	if _, err := f.Write(buf.Bytes()); err != nil {
+		f.Close()
+		return err
+	}
+	if err := f.Chmod(0o644); err != nil {
+		f.Close()
+		return err
+	}
+	if err := f.Close(); err != nil {
+		return err
+	}
+	return os.Rename(f.Name(), html)
 }
 
 func readJSONL(path string) ([]event.Event, error) {

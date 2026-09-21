@@ -1,5 +1,10 @@
 # optional seed kit: everyone still runs unless you pass --profile / --allow / --deny
 allow:
+  - nmap-discover
+  - resolve
+  - reconcile
+  - dnsx
+  - ctl
   - nmap-quick
   - nmap-http
   - nmap-svc

@@ -3,8 +3,11 @@ package sdk
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"os"
+	"os/exec"
+	"slices"
 	"strings"
 	"time"
 
@@ -17,8 +20,7 @@ import (
 
 const (
 	StreamName  = "EVENTS"
-	DedupBucket = "ADAMA_DEDUP"
-	DefaultTTL  = 24 * time.Hour
+	DedupBucket = WorkBucket
 )
 
 func NATSURL() string {
@@ -29,9 +31,11 @@ func NATSURL() string {
 }
 
 type Bus struct {
-	nc *nats.Conn
-	JS jetstream.JetStream
-	KV jetstream.KeyValue
+	nc     *nats.Conn
+	JS     jetstream.JetStream
+	KV     jetstream.KeyValue
+	Outbox jetstream.ObjectStore
+	Tools  jetstream.KeyValue
 }
 
 func Connect(ctx context.Context, url string) (*Bus, error) {
@@ -47,7 +51,6 @@ func Connect(ctx context.Context, url string) (*Bus, error) {
 	if _, err := js.CreateOrUpdateStream(ctx, jetstream.StreamConfig{
 		Name:       StreamName,
 		Subjects:   []string{event.SubjectPrefix + ">"},
-		MaxAge:     DefaultTTL,
 		MaxMsgSize: 8 << 20,
 		Retention:  jetstream.LimitsPolicy,
 		Storage:    jetstream.FileStorage,
@@ -57,21 +60,43 @@ func Connect(ctx context.Context, url string) (*Bus, error) {
 	}
 	kv, err := js.CreateOrUpdateKeyValue(ctx, jetstream.KeyValueConfig{
 		Bucket: DedupBucket,
-		TTL:    DefaultTTL,
 	})
 	if err != nil {
 		nc.Close()
 		return nil, err
 	}
-	return &Bus{nc: nc, JS: js, KV: kv}, nil
+	outbox, err := js.CreateOrUpdateObjectStore(ctx, jetstream.ObjectStoreConfig{Bucket: OutboxBucket, Storage: jetstream.FileStorage})
+	if err != nil {
+		nc.Close()
+		return nil, err
+	}
+	toolState, err := js.CreateOrUpdateKeyValue(ctx, jetstream.KeyValueConfig{Bucket: ToolBucket})
+	if err != nil {
+		nc.Close()
+		return nil, err
+	}
+	return &Bus{nc: nc, JS: js, KV: kv, Outbox: outbox, Tools: toolState}, nil
 }
 
 func (b *Bus) Close() { b.nc.Close() }
 
 func (b *Bus) Publish(ctx context.Context, ev event.Event) error {
-	ev, err := ev.Canonical()
+	ev, err := prepare(ev)
 	if err != nil {
 		return err
+	}
+	raw, err := ev.Bytes()
+	if err != nil {
+		return err
+	}
+	_, err = b.JS.Publish(ctx, event.Subject(ev.Kind), raw, jetstream.WithMsgID(ev.ID))
+	return err
+}
+
+func prepare(ev event.Event) (event.Event, error) {
+	ev, err := ev.Canonical()
+	if err != nil {
+		return ev, err
 	}
 	if ev.ID == "" {
 		ev.ID = nuid.Next()
@@ -83,24 +108,46 @@ func (b *Bus) Publish(ctx context.Context, ev event.Event) error {
 		ev.Observed = time.Now().UTC()
 	}
 	raw, err := ev.Bytes()
-	if err != nil {
-		return err
+	if err == nil && len(raw) > 8<<20 {
+		err = fmt.Errorf("event exceeds 8 MiB payload limit")
 	}
-	_, err = b.JS.Publish(ctx, event.Subject(ev.Kind), raw)
-	return err
+	return ev, err
 }
 
 type Config struct {
-	Name     string
-	URL      string
-	Kinds    []event.Kind
-	AckWait  time.Duration
-	NeedLive bool // skip before dedup unless meta.alive=true
-	Observe  bool // observation sinks receive every event; redelivery retains its ID
-	Handle   func(context.Context, event.Event) ([]event.Event, error)
+	Name               string
+	URL                string
+	Kinds              []event.Kind
+	AckWait            time.Duration
+	NeedLive           bool                   // skip before dedup unless meta.alive=true
+	Observe            bool                   // observation sinks receive every event; redelivery retains its ID
+	RequiredTools      []string               // fail before consuming targets if a binary is missing
+	Accept             func(event.Event) bool // pure eligibility check, before claiming work
+	MaxAttempts        int
+	MaxPublishAttempts int
+	MaxPending         int
+	TaskTimeout        time.Duration
+	RetryWindow        time.Duration
+	RetryDelay         time.Duration
+	LeaseDuration      time.Duration
+	ShutdownGrace      time.Duration
+	Handle             func(context.Context, event.Event) ([]event.Event, error)
 }
 
 func Run(ctx context.Context, cfg Config) error {
+	var err error
+	cfg, err = cfg.defaults()
+	if err != nil {
+		return err
+	}
+	if cfg.Name == "" || cfg.Handle == nil {
+		return fmt.Errorf("worker needs name and handler")
+	}
+	for _, binary := range cfg.RequiredTools {
+		if _, err := exec.LookPath(binary); err != nil {
+			return fmt.Errorf("worker %s prerequisite: %w", cfg.Name, err)
+		}
+	}
 	if cfg.URL == "" {
 		cfg.URL = NATSURL()
 	}
@@ -109,42 +156,89 @@ func Run(ctx context.Context, cfg Config) error {
 		return err
 	}
 	defer b.Close()
+	cons, err := b.consumer(ctx, cfg)
+	if err != nil {
+		return err
+	}
+	messages, err := cons.Messages(jetstream.PullMaxMessages(1))
+	if err != nil {
+		return err
+	}
+	defer messages.Stop()
+	stopped := make(chan struct{})
+	defer close(stopped)
+	go func() {
+		select {
+		case <-ctx.Done():
+			messages.Stop()
+		case <-stopped:
+		}
+	}()
+	slog.Info("listening", "tool", cfg.Name, "kinds", cfg.Kinds)
+	for ctx.Err() == nil {
+		if _, err := b.Tools.Get(ctx, cfg.Name); err == nil {
+			timer := time.NewTimer(time.Second)
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return nil
+			case <-timer.C:
+			}
+			continue
+		} else if !errors.Is(err, jetstream.ErrKeyNotFound) {
+			return err
+		}
+		msg, err := messages.Next()
+		if err != nil {
+			if ctx.Err() != nil {
+				return nil
+			}
+			return err
+		}
+		if ctx.Err() != nil {
+			_ = msg.NakWithDelay(cfg.RetryDelay)
+			break
+		}
+		b.onMsg(ctx, cfg, msg)
+	}
+	return nil
+}
 
+func (b *Bus) consumer(ctx context.Context, cfg Config) (jetstream.Consumer, error) {
 	subjects := make([]string, len(cfg.Kinds))
 	for i, k := range cfg.Kinds {
 		subjects[i] = event.Subject(k)
 	}
-	ackWait := cfg.AckWait
-	if ackWait == 0 {
-		ackWait = 5 * time.Minute
+	wanted := jetstream.ConsumerConfig{
+		Durable: cfg.Name, FilterSubjects: subjects, AckPolicy: jetstream.AckExplicitPolicy,
+		DeliverPolicy: jetstream.DeliverAllPolicy, AckWait: cfg.AckWait,
+		MaxDeliver: -1, MaxAckPending: cfg.MaxPending,
 	}
-	_, err = b.JS.CreateConsumer(ctx, StreamName, jetstream.ConsumerConfig{
-		Durable:        cfg.Name,
-		FilterSubjects: subjects,
-		AckPolicy:      jetstream.AckExplicitPolicy,
-		DeliverPolicy:  jetstream.DeliverNewPolicy,
-		AckWait:        ackWait,
-		MaxDeliver:     5,
-		MaxAckPending:  1,
-	})
+	cons, err := b.JS.CreateConsumer(ctx, StreamName, wanted)
 	if err != nil && !consumerExists(err) {
-		return err
+		return nil, err
 	}
-	cons, err := b.JS.Consumer(ctx, StreamName, cfg.Name)
+	if cons == nil {
+		cons, err = b.JS.Consumer(ctx, StreamName, cfg.Name)
+		if err != nil {
+			return nil, err
+		}
+	}
+	info, err := cons.Info(ctx)
 	if err != nil {
-		return err
+		return nil, err
 	}
-
-	slog.Info("listening", "tool", cfg.Name, "kinds", cfg.Kinds)
-	cc, err := cons.Consume(func(msg jetstream.Msg) {
-		b.onMsg(ctx, cfg, msg)
-	})
-	if err != nil {
-		return err
+	got := info.Config
+	filters := append([]string{}, got.FilterSubjects...)
+	if got.FilterSubject != "" {
+		filters = append(filters, got.FilterSubject)
 	}
-	defer cc.Stop()
-	<-ctx.Done()
-	return nil
+	slices.Sort(filters)
+	slices.Sort(subjects)
+	if !slices.Equal(filters, subjects) || got.AckPolicy != wanted.AckPolicy || got.DeliverPolicy != wanted.DeliverPolicy || got.AckWait != wanted.AckWait || got.MaxDeliver != wanted.MaxDeliver || got.MaxAckPending != wanted.MaxAckPending {
+		return nil, fmt.Errorf("consumer %s configuration differs from worker; migrate the durable explicitly before starting (filters, delivery policy, AckWait, MaxDeliver, MaxAckPending)", cfg.Name)
+	}
+	return cons, nil
 }
 
 func consumerExists(err error) bool {
@@ -152,93 +246,6 @@ func consumerExists(err error) bool {
 		errors.Is(err, jetstream.ErrConsumerNameAlreadyInUse) ||
 		strings.Contains(err.Error(), "already in use") ||
 		strings.Contains(err.Error(), "already exists")
-}
-
-func (b *Bus) onMsg(ctx context.Context, cfg Config, msg jetstream.Msg) {
-	ev, err := event.Decode(msg.Data())
-	if err != nil {
-		slog.Error("decode", "err", err)
-		_ = msg.Ack()
-		return
-	}
-	ev, err = ev.Canonical()
-	if err != nil {
-		slog.Error("canon", "err", err, "kind", ev.Kind, "value", ev.Value)
-		_ = msg.Ack()
-		return
-	}
-	if ev.RunID == "" && ev.ParentID == "" {
-		ev.RunID = ev.ID
-	}
-	if !event.Allowed(cfg.Name, ev.Meta) {
-		slog.Info("skip", "tool", cfg.Name, "kind", ev.Kind, "value", ev.Value, "reason", "gate")
-		b.note("skip", cfg.Name, ev, "gate", 0, 0)
-		_ = msg.Ack()
-		return
-	}
-	if cfg.NeedLive && !event.Live(ev) {
-		slog.Info("skip", "tool", cfg.Name, "kind", ev.Kind, "value", ev.Value, "reason", "alive")
-		b.note("skip", cfg.Name, ev, "alive", 0, 0)
-		_ = msg.Ack()
-		return
-	}
-	key := event.DedupKey(cfg.Name, ev)
-	if !cfg.Observe {
-		if _, err := b.KV.Create(ctx, key, []byte("1")); err != nil {
-			if errors.Is(err, jetstream.ErrKeyExists) {
-				slog.Info("skip", "tool", cfg.Name, "kind", ev.Kind, "value", ev.Value)
-				b.note("skip", cfg.Name, ev, "dedup", 0, 0)
-				_ = msg.Ack()
-				return
-			}
-			slog.Error("dedup", "err", err)
-			_ = msg.Nak()
-			return
-		}
-	}
-
-	slog.Info("handle", "tool", cfg.Name, "kind", ev.Kind, "value", ev.Value)
-	t0 := time.Now()
-	b.note("start", cfg.Name, ev, "", 0, 0)
-	scanID := nuid.Next()
-	out, err := cfg.Handle(ctx, ev)
-	if err != nil {
-		slog.Error("handle", "tool", cfg.Name, "err", err)
-		b.note("error", cfg.Name, ev, err.Error(), 0, time.Since(t0))
-		if !cfg.Observe {
-			_ = b.KV.Delete(ctx, key)
-		}
-		_ = msg.Nak()
-		return
-	}
-	for _, child := range out {
-		if child.SchemaVersion == 0 {
-			child.SchemaVersion = event.SchemaVersion
-		}
-		child.Source = cfg.Name
-		child.ParentID = ev.ID
-		child.RunID = ev.RunID
-		child.ScanID = scanID
-		if child.Input == nil {
-			child.Input = ev.AsInput()
-		}
-		if child.Probe == "" {
-			child.Probe = cfg.Name
-		}
-		child = event.InheritGate(ev, child)
-		if err := b.Publish(ctx, child); err != nil {
-			slog.Error("publish", "err", err, "kind", child.Kind, "value", child.Value)
-			b.note("error", cfg.Name, ev, err.Error(), 0, time.Since(t0))
-			if !cfg.Observe {
-				_ = b.KV.Delete(ctx, key)
-			}
-			_ = msg.Nak()
-			return
-		}
-		slog.Info("emit", "tool", cfg.Name, "kind", child.Kind, "value", child.Value)
-	}
-	b.note("done", cfg.Name, ev, "", len(out), time.Since(t0))
-	_ = msg.Ack()
 }
 
 func (b *Bus) note(action, tool string, ev event.Event, reason string, emitted int, elapsed time.Duration) {

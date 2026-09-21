@@ -42,10 +42,10 @@ func parseHits(stdout []byte, in event.Event) ([]event.Event, error) {
 			continue
 		}
 		if err := json.Unmarshal(line, &hit); err != nil {
-			return nil, fmt.Errorf("nuclei result: %w", err)
+			return evs, fmt.Errorf("nuclei result: %w", err)
 		}
 		if hit.TemplateID == "" {
-			return nil, fmt.Errorf("nuclei result missing template ID")
+			return evs, fmt.Errorf("nuclei result missing template ID")
 		}
 		t := findingTarget(hit, in)
 		ev := event.Event{

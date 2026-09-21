@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"adama/event"
+	"adama/sdk"
 )
 
 var httpc = &http.Client{Timeout: 15 * time.Second}
@@ -26,13 +27,18 @@ func deliver(ctx context.Context, url, file string, ev event.Event) error {
 			return err
 		}
 		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Idempotency-Key", ev.ID)
 		res, err := httpc.Do(req)
 		if err != nil {
-			return err
+			return sdk.Retryable(err)
 		}
 		defer res.Body.Close()
 		if res.StatusCode < 200 || res.StatusCode > 299 {
-			return fmt.Errorf("report api %s", res.Status)
+			err := fmt.Errorf("report api %s", res.Status)
+			if res.StatusCode == 429 || res.StatusCode >= 500 {
+				return sdk.Retryable(err)
+			}
+			return err
 		}
 		return nil
 	}
@@ -47,14 +53,21 @@ func deliver(ctx context.Context, url, file string, ev event.Event) error {
 	if _, err = f.Write(append(raw, '\n')); err != nil {
 		return err
 	}
+	if err := f.Sync(); err != nil {
+		return err
+	}
 	return writeHTML(file)
 }
 
-func resetFile(file string) error {
+func initFile(file string) error {
 	if err := os.MkdirAll(filepath.Dir(file), 0o755); err != nil {
 		return err
 	}
-	if err := os.WriteFile(file, nil, 0o644); err != nil {
+	f, err := os.OpenFile(file, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+	if err != nil {
+		return err
+	}
+	if err := f.Close(); err != nil {
 		return err
 	}
 	return writeHTML(file)

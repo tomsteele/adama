@@ -33,11 +33,11 @@ func Parse(data []byte, via, parent string) ([]event.Event, error) {
 		}
 		var a answer
 		if err := json.Unmarshal(line, &a); err != nil {
-			return nil, fmt.Errorf("dnsx result: %w", err)
+			return out, fmt.Errorf("dnsx result: %w", err)
 		}
 		name := event.CanonFQDN(a.Host)
 		if name == "" {
-			return nil, fmt.Errorf("dnsx result missing hostname")
+			return out, fmt.Errorf("dnsx result missing hostname")
 		}
 		for _, group := range []struct {
 			addresses []string
@@ -46,10 +46,10 @@ func Parse(data []byte, via, parent string) ([]event.Event, error) {
 			for _, raw := range group.addresses {
 				ip, err := netip.ParseAddr(raw)
 				if err != nil {
-					return nil, fmt.Errorf("dnsx address: %w", err)
+					return out, fmt.Errorf("dnsx address: %w", err)
 				}
 				if (group.role == event.NameDNSA && !ip.Is4()) || (group.role == event.NameDNSAAAA && !ip.Is6()) {
-					return nil, fmt.Errorf("dnsx address family disagrees with record type")
+					return out, fmt.Errorf("dnsx address family disagrees with record type")
 				}
 				info := map[string]string{"via": via, "parent": parent, "status_code": a.Status}
 				if len(a.CNAME) > 0 {

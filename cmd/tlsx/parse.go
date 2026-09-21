@@ -38,7 +38,7 @@ func parseTLSX(stdout []byte, trigger event.Event) ([]event.Event, error) {
 		}
 		var hit tlsxHit
 		if err := json.Unmarshal(line, &hit); err != nil {
-			return nil, fmt.Errorf("tlsx result: %w", err)
+			return evs, fmt.Errorf("tlsx result: %w", err)
 		}
 		ip, _ := event.CanonIP(hit.IP)
 		if ip == "" {
