@@ -10,7 +10,6 @@ import (
 
 	"adama/event"
 	"adama/internal/nmapx"
-	"adama/internal/reconcile"
 	"adama/internal/toolrun"
 	"adama/sdk"
 )
@@ -32,18 +31,13 @@ func main() {
 		Name:          p.Name,
 		Kinds:         p.EventKinds(),
 		AckWait:       p.Ack(),
-		Accept: func(ev event.Event) bool {
-			return !event.Live(ev) && (ev.Kind != event.KindFQDN || reconcile.BoundName(ev))
-		},
+		Filter:        sdk.Not(sdk.FieldIn("alive", "true")),
+		NeedBinding:   true,
+		Evidence:      "live address",
 		Handle: func(ctx context.Context, ev event.Event) ([]event.Event, error) {
-			if event.Live(ev) {
-				return nil, nil
-			}
-			if ev.Kind == event.KindFQDN && !reconcile.BoundName(ev) {
-				return nil, nil
-			}
 			args := append(p.Args(ev), "-oX", "-", ev.TargetHost())
 			out, runErr := toolrun.Run(ctx, "nmap", args, nil)
+			runErr = errors.Join(runErr, nmapx.CompletionError(out))
 			hosts, err := nmapx.ParseDiscovery(out)
 			if err != nil {
 				return nil, errors.Join(runErr, err)

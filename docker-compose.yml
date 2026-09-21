@@ -1,4 +1,19 @@
+x-worker: &worker
+  labels:
+    io.adama.worker: "true"
+
 services:
+  web-probe:
+    <<: *worker
+    build:
+      context: .
+      target: web-probe
+    environment:
+      NATS_URL: nats://nats:4222
+    depends_on: [nats]
+    restart: unless-stopped
+    stop_grace_period: 30s
+
   nats:
     image: nats:2-alpine
     command: ["-c", "/etc/nats/nats.conf"]
@@ -10,6 +25,7 @@ services:
       - "8222:8222"
 
   resolve:
+    <<: *worker
     build:
       context: .
       target: resolve
@@ -20,6 +36,7 @@ services:
     stop_grace_period: 30s
 
   reconcile:
+    <<: *worker
     build:
       context: .
       target: reconcile
@@ -30,6 +47,7 @@ services:
     stop_grace_period: 30s
 
   nmap-discover:
+    <<: *worker
     build:
       context: .
       target: nmap
@@ -42,6 +60,7 @@ services:
     stop_grace_period: 30s
 
   nmap-quick:
+    <<: *worker
     build:
       context: .
       target: nmap
@@ -53,6 +72,7 @@ services:
     stop_grace_period: 30s
 
   nmap-http:
+    <<: *worker
     build:
       context: .
       target: nmap
@@ -64,6 +84,7 @@ services:
     stop_grace_period: 30s
 
   nmap-full:
+    <<: *worker
     build:
       context: .
       target: nmap
@@ -75,6 +96,7 @@ services:
     stop_grace_period: 30s
 
   nmap-svc:
+    <<: *worker
     build:
       context: .
       target: nmap
@@ -87,6 +109,7 @@ services:
     stop_grace_period: 30s
 
   as-url:
+    <<: *worker
     build:
       context: .
       target: nmap
@@ -98,6 +121,7 @@ services:
     stop_grace_period: 30s
 
   dnsx:
+    <<: *worker
     build:
       context: .
       target: dnsx
@@ -108,6 +132,7 @@ services:
     stop_grace_period: 30s
 
   ctl:
+    <<: *worker
     build:
       context: .
       target: ctl
@@ -118,6 +143,7 @@ services:
     stop_grace_period: 30s
 
   tlsx:
+    <<: *worker
     build:
       context: .
       target: tlsx
@@ -128,6 +154,7 @@ services:
     stop_grace_period: 30s
 
   httpx:
+    <<: *worker
     build:
       context: .
       target: httpx
@@ -142,6 +169,7 @@ services:
     stop_grace_period: 30s
 
   nuclei:
+    <<: *worker
     build:
       context: .
       target: nuclei
@@ -153,6 +181,7 @@ services:
     stop_grace_period: 30s
 
   nuclei-net:
+    <<: *worker
     build:
       context: .
       target: nuclei
@@ -164,6 +193,7 @@ services:
     stop_grace_period: 30s
 
   report:
+    <<: *worker
     build:
       context: .
       target: report
@@ -177,6 +207,7 @@ services:
     stop_grace_period: 30s
 
   export:
+    <<: *worker
     build:
       context: .
       target: export

@@ -32,6 +32,7 @@ func main() {
 	err = sdk.Run(ctx, sdk.Config{
 		RequiredTools: screenshotTools(p.HttpxArgs),
 		Name:          p.Name,
+		Evidence:      "screenshot",
 		Kinds:         p.kinds(),
 		AckWait:       p.ackWait(),
 		Handle: func(ctx context.Context, ev event.Event) ([]event.Event, error) {

@@ -1,6 +1,6 @@
 # Work execution and recovery
 
-Each scanner still subscribes to the existing event kinds. The SDK now separates receiving a message, executing a tool, persisting its output, and completing publication. `ADAMA_WORK` stores task state and `ADAMA_OUTBOX` stores result batches, both in JetStream file storage without an expiry. `ADAMA_TOOLS` holds shared tool faults; `ADAMA_FACTS` holds name/endpoint relationships.
+Each scanner still subscribes to the existing event kinds. The SDK now separates receiving a message, executing a tool, persisting its output, and completing publication. `ADAMA_WORK` stores task state and `ADAMA_OUTBOX` stores result batches, both in JetStream file storage without an expiry. `ADAMA_TOOLS` holds shared tool faults; `ADAMA_FACTS` holds name/endpoint relationships. `ADAMA_REGISTRY` retains worker execution contracts and deployment inventory.
 
 ```mermaid
 stateDiagram-v2
@@ -40,7 +40,45 @@ docker compose run --rm work tools       # shared tool faults, JSONL
 docker compose run --rm work resume httpx
 ```
 
-Task records include input identity, scope/run, status, attempts/budgets, lease owner/deadline, error, output count, and outbox key. These records account for work received by a worker; they are not yet a complete desired-work planner or a run-completion certificate.
+Task records include input identity, scope/run, status, attempts/budgets, lease owner/deadline, error, output count, and outbox key. `work coverage` compares those records against expected work reconstructed from retained observations, so it also accounts for inputs no worker has claimed.
+
+## Coverage snapshots
+
+```bash
+docker compose run --rm work coverage --scope web1
+docker compose run --rm work coverage --run assessment-1
+```
+
+The command reads a fixed EVENTS sequence boundary and loads worker definitions from `ADAMA_REGISTRY`. It evaluates the same serialized eligibility rules used by workers and compares each expected work key with `ADAMA_WORK`; observation consumers retain separate event identities. The report includes consumer existence/backlog and shared tool pauses. Consumer backlog counts are global for the tool, not limited to the selected scope.
+
+Unclaimed work remains visible when a worker is absent or starts late. Resolution and liveness blockers are reconciled against later observations in either order, separately for every bound IP. A domain includes an apex-resolution requirement. Discovery, address resolution, service identification, and screenshot executions that complete without producing their required evidence are identified separately from successful scans with no open ports or findings. Failed tasks remain failed; inspection never reschedules them.
+
+Run IDs do not isolate work. Selecting a run includes all retained events in that run's scopes, including earlier outputs from reused tasks. The report lists these `shared_scopes`; the empty scope includes all unscoped work. Use `--scope` for an explicit assessment boundary and new scopes for rescanning.
+
+`work_complete_at_snapshot` requires all expected work to be completed, required evidence present, retained history intact, deployment inventory ready, and no event/work/registration changes during the snapshot. The sequence and timestamp qualify the result: more seeds can extend a run afterward. Deleted history, no matching events, unknown allowlisted workers, and missing expected registrations cannot produce a complete result. Snapshots currently read the retained stream and are intended for inspection, not constant polling of a large archive. The timeout defaults to five minutes.
+
+This is task coverage of observed inputs, not proof that every possible hostname, port, or vulnerability exists in the inventory. It does not yet provide a sealed run lifecycle, port-range/UDP uncertainty accounting, or independently verified browser navigation endpoints.
+
+## Worker registration
+
+`sdk.Run` publishes a versioned execution contract from its own `Config` before checking executables, performing runtime setup, or consuming messages. It includes the effective name/kinds from the worker's profile, `Observe`, `NeedLive`, `NeedBinding`, `Evidence`, and `Filter`. The SDK evaluates `Filter` before taking a work claim; coverage evaluates the identical persisted rule. Rules support `All`, `Any`, `Not`, `FieldIn`, and `Has` over canonical event fields. Unknown fields/versions and invalid rule combinations fail validation. There is no tool-name switch or tool-specific predicate registry.
+
+Definitions persist without TTL or deregistration on shutdown. A missing binary still leaves a registered worker whose unclaimed work is visible. Identical replicas register idempotently. Different execution contracts under the same worker name fail startup instead of replacing each other; profile flags and scanner/template versions are not part of this scheduling contract.
+
+For initial deployment, generate the expected inventory directly from Compose:
+
+```bash
+python3 scripts/register-workers.py
+docker compose up -d
+docker compose run --rm work registered
+docker compose run --rm work inventory
+```
+
+The script builds worker images and the operations CLI, starts NATS, and discovers worker services through the `io.adama.worker=true` label (`<<: *worker` in Compose). Each service runs once with `ADAMA_REGISTER_ONLY=1`, returning its actual contract without checking scanner binaries, running `Setup`, creating consumers, or invoking handlers. The script records the resulting worker names as the expected inventory. It marks provisioning incomplete before changing registrations; failures/interruption leave that state visible and cannot certify coverage. `--no-build` uses images already rebuilt with registration support.
+
+Other orchestrators can invoke the same registration-only mode and generate `work inventory set WORKER...` from the returned definitions, with `work inventory begin` before provisioning. Coverage without an inventory still lists known work, but cannot certify completion: the cluster cannot infer an unknown worker that has never contacted it. New workers automatically join coverage when they register. Existing definitions remain expected even when their containers disappear; intentionally retiring a tool requires deliberate registry/inventory administration, not replica shutdown.
+
+For a changed execution contract, stop the affected replicas, run `python3 scripts/register-workers.py --replace`, migrate any incompatible JetStream consumer settings as described below, then restart. Replacement updates definitions but never clears task records or retries terminal work; use a new scope for independent work. Keep runtime initialization in `Config.Setup` so provisioning can register a worker even when its runtime dependencies are unavailable.
 
 ## Worker settings
 
@@ -70,6 +108,10 @@ JetStream transport deliveries are unlimited so waiting on a lease or replacing 
 Joins require the same scope and IP, preserve TCP/UDP, and accept only requested or forward-resolved name bindings. PTR/certificate mentions first go through resolution. Gates are intersected, with deny lists combined; joining two facts cannot broaden either fact's allowed downstream tools. Output details retain both evidence event IDs. Custom allowlists must include `resolve` and `reconcile`; the bundled web profile includes them and its discovery prerequisites.
 
 This closes scheduling gaps for known name/address/open-port combinations. HTTPX and Nuclei can still re-resolve a URL; browser endpoint pinning and exact redirect/browser evidence remain separate work. HTTPX preserves unexpected-backend observations but fails the requested task when its reported probe IP differs from the input IP (or is absent). This change does not claim that every backend has been screenshot merely because every named URL has been scheduled.
+
+`web-probe` fills the identification gap for `unknown`, `ssl`, `tls`, `ssl/unknown`, and `tcpwrapped` TCP services with known IPs. It makes at most one GET per HTTP/HTTPS scheme, connecting directly to that IP while retaining the requested Host/SNI. It does not follow redirects or use environment proxies. Any HTTP status confirms the service; certificate trust is not a prerequisite for identification. Response headers and per-scheme deadlines are bounded (`WEB_PROBE_TIMEOUT`, default five seconds). Confirmed services reach `as-url` normally. A negative result is a service observation with `http_probe_status=not_detected`; a timeout with no positive result is `inconclusive` and terminal by default. Its own diagnostic outputs never trigger another probe.
+
+Nmap workers validate XML completion in addition to subprocess exit status. A missing completion record, an error exit in the XML, or a host marked timed out fails the task while preserving successfully parsed open endpoints. These checks follow the [Nmap XML specification](https://nmap.org/book/nmap-dtd.html); a process returning zero alone is insufficient evidence of complete coverage.
 
 ## Retention and rollout
 

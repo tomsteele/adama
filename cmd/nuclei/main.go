@@ -9,6 +9,7 @@ import (
 	"syscall"
 
 	"adama/event"
+	"adama/internal/asurl"
 	"adama/internal/toolrun"
 	"adama/sdk"
 )
@@ -30,6 +31,7 @@ func main() {
 		Name:          p.Name,
 		Kinds:         p.kinds(),
 		AckWait:       p.ackWait(),
+		Filter:        sdk.Any(sdk.Not(sdk.FieldIn("kind", string(event.KindService))), sdk.Not(asurl.WebServiceRule())),
 		Handle: func(ctx context.Context, ev event.Event) ([]event.Event, error) {
 			u, ok := target(ev)
 			if !ok {

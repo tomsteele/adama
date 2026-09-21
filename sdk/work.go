@@ -431,13 +431,8 @@ func (b *Bus) onMsg(ctx context.Context, cfg Config, msg jetstream.Msg) {
 	if ev.RunID == "" && ev.ParentID == "" {
 		ev.RunID = ev.ID
 	}
-	if !event.Allowed(cfg.Name, ev.Meta) || (cfg.NeedLive && !event.Live(ev)) {
-		b.note("skip", cfg.Name, ev, "gate or liveness prerequisite", 0, 0)
-		_ = msg.Ack()
-		return
-	}
-	if cfg.Accept != nil && !cfg.Accept(ev) {
-		b.note("skip", cfg.Name, ev, "not an eligible input", 0, 0)
+	if !cfg.Definition().Eligible(ev) {
+		b.note("skip", cfg.Name, ev, "input rule, gate, or prerequisite", 0, 0)
 		_ = msg.Ack()
 		return
 	}

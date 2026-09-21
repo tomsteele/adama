@@ -16,8 +16,9 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	err := sdk.Run(ctx, sdk.Config{
-		Name:  "as-url",
-		Kinds: []event.Kind{event.KindService},
+		Name:   "as-url",
+		Kinds:  []event.Kind{event.KindService},
+		Filter: asurl.InputRule(),
 		Handle: func(_ context.Context, ev event.Event) ([]event.Event, error) {
 			out, ok := asurl.Event(ev)
 			if !ok {

@@ -30,6 +30,7 @@ func main() {
 	err = sdk.Run(ctx, sdk.Config{
 		RequiredTools: []string{"nmap"},
 		Name:          p.Name,
+		Evidence:      "service identification",
 		Kinds:         p.EventKinds(),
 		AckWait:       p.Ack(),
 		Handle: func(ctx context.Context, ev event.Event) ([]event.Event, error) {
@@ -39,6 +40,7 @@ func main() {
 			}
 			args := append(p.Args(ev), "-p", strconv.Itoa(port), "-oX", "-", host)
 			out, runErr := toolrun.Run(ctx, "nmap", args, nil)
+			runErr = errors.Join(runErr, nmapx.CompletionError(out))
 			svcs, err := nmapx.ParseServices(out)
 			if err != nil {
 				return nil, errors.Join(runErr, err)

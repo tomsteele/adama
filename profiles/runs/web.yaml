@@ -10,6 +10,7 @@ allow:
   - nmap-svc
   - tlsx
   - as-url
+  - web-probe
   - httpx
   - nuclei
   - report

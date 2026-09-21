@@ -3,6 +3,7 @@ package nmapx
 import (
 	"encoding/json"
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"strconv"
 
@@ -10,10 +11,16 @@ import (
 )
 
 type nmapRun struct {
-	Hosts []nmapHost `xml:"host"`
+	XMLName  xml.Name   `xml:"nmaprun"`
+	Hosts    []nmapHost `xml:"host"`
+	Finished *struct {
+		Exit  string `xml:"exit,attr"`
+		Error string `xml:"errormsg,attr"`
+	} `xml:"runstats>finished"`
 }
 type nmapHost struct {
-	Status struct {
+	TimedOut bool `xml:"timedout,attr"`
+	Status   struct {
 		State  string `xml:"state,attr"`
 		Reason string `xml:"reason,attr"`
 	} `xml:"status"`
@@ -28,6 +35,29 @@ type nmapHost struct {
 	Ports   []nmapPort   `xml:"ports>port"`
 	Scripts []nmapScript `xml:"hostscript>script"`
 }
+
+// CompletionError checks invocation completeness separately from evidence
+// parsing, so valid observations survive a run error or a per-host timeout.
+// https://nmap.org/book/nmap-dtd.html defines host.timedout and finished.exit.
+func CompletionError(data []byte) error {
+	var run nmapRun
+	if err := xml.Unmarshal(data, &run); err != nil {
+		return fmt.Errorf("nmap XML: %w", err)
+	}
+	var problems []error
+	if run.Finished == nil {
+		problems = append(problems, fmt.Errorf("nmap output has no completion record"))
+	} else if run.Finished.Exit != "success" {
+		problems = append(problems, fmt.Errorf("nmap completion exit %q: %s", run.Finished.Exit, run.Finished.Error))
+	}
+	for _, host := range run.Hosts {
+		if host.TimedOut {
+			problems = append(problems, fmt.Errorf("nmap host %s timed out; scan coverage is incomplete", hostIdentity(host).IP))
+		}
+	}
+	return errors.Join(problems...)
+}
+
 type nmapPort struct {
 	Port  int            `xml:"portid,attr"`
 	Proto event.Protocol `xml:"protocol,attr"`

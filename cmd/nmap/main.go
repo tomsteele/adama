@@ -35,6 +35,7 @@ func main() {
 		Handle: func(ctx context.Context, ev event.Event) ([]event.Event, error) {
 			args := append(p.Args(ev), "-oX", "-", ev.TargetHost())
 			out, runErr := toolrun.Run(ctx, "nmap", args, nil)
+			runErr = errors.Join(runErr, nmapx.CompletionError(out))
 			scans, err := nmapx.ParseXML(out)
 			if err != nil {
 				return nil, errors.Join(runErr, err)

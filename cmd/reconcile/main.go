@@ -15,18 +15,13 @@ import (
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	b, err := sdk.Connect(ctx, sdk.NATSURL())
-	if err != nil {
-		slog.Error("connect", "err", err)
-		os.Exit(1)
-	}
-	defer b.Close()
-	facts, err := reconcile.New(ctx, b.JS)
-	if err != nil {
-		slog.Error("facts", "err", err)
-		os.Exit(1)
-	}
-	err = sdk.Run(ctx, sdk.Config{Name: "reconcile", Kinds: []event.Kind{event.KindFQDN, event.KindPort}, Observe: true, MaxPending: 1, Accept: reconcile.Accept,
+	var facts *reconcile.Store
+	err := sdk.Run(ctx, sdk.Config{Name: "reconcile", Kinds: []event.Kind{event.KindFQDN, event.KindPort}, Observe: true, MaxPending: 1, Filter: reconcile.InputRule(),
+		Setup: func(ctx context.Context, b *sdk.Bus) error {
+			var err error
+			facts, err = reconcile.New(ctx, b.JS)
+			return err
+		},
 		Handle: func(ctx context.Context, ev event.Event) ([]event.Event, error) {
 			out, err := facts.Handle(ctx, ev)
 			return out, sdk.Retryable(err)

@@ -9,6 +9,7 @@ import (
 	"slices"
 
 	"adama/event"
+	"adama/sdk"
 	"github.com/nats-io/nats.go/jetstream"
 )
 
@@ -22,16 +23,16 @@ func New(ctx context.Context, js jetstream.JetStream) (*Store, error) {
 }
 
 func BoundName(ev event.Event) bool {
-	return ev.Host != "" && ev.Name != "" && (ev.NameRole == event.NameDNSA || ev.NameRole == event.NameDNSAAAA || ev.NameRole == event.NameRequested)
+	return event.BoundName(ev)
 }
 
-func Accept(ev event.Event) bool {
-	if ev.Source == "reconcile" || ev.Host == "" {
-		return false
-	}
-	return (ev.Kind == event.KindFQDN && BoundName(ev)) ||
-		(ev.Kind == event.KindPort && ev.Port > 0 && (ev.Proto == event.TCP || ev.Proto == event.UDP))
+func InputRule() sdk.Rule {
+	return sdk.All(sdk.Not(sdk.FieldIn("source", "reconcile")), sdk.Has("host"),
+		sdk.Any(sdk.All(sdk.FieldIn("kind", string(event.KindFQDN)), sdk.BoundNameRule()),
+			sdk.All(sdk.FieldIn("kind", string(event.KindPort)), sdk.Has("port"), sdk.FieldIn("proto", string(event.TCP), string(event.UDP)))))
 }
+
+func Accept(ev event.Event) bool { return InputRule().Match(ev) }
 
 func digest(parts ...string) string {
 	raw, _ := json.Marshal(parts)

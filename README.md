@@ -2,7 +2,7 @@
 
 A reactive passive and active discovery process.
 
-Tools subscribe themselves. Events and work state persist until explicit cleanup. Scanner work is identified by tool, scope, and target; observation sinks receive distinct events. Durable leases, saved output batches, and finite execution budgets handle worker replacement. See [execution, recovery, and rollout](sdk/WORKFLOW.md).
+Tools register and subscribe themselves. Events, worker definitions, and work state persist until explicit cleanup. Scanner work is identified by tool, scope, and target; observation sinks receive distinct events. Durable leases, saved output batches, and finite execution budgets handle worker replacement. See [execution, recovery, and rollout](sdk/WORKFLOW.md).
 
 ```mermaid
 flowchart LR
@@ -25,6 +25,8 @@ flowchart LR
   events --> nmapSvc[nmap-svc]
   events --> tlsx
   nmapSvc -->|service| events
+  events --> webProbe[web-probe]
+  webProbe -->|confirmed HTTP service| events
   tlsx -->|fqdn| events
   events --> reconcile
   reconcile -->|named port| events
@@ -41,6 +43,7 @@ flowchart LR
 ```
 
 ```bash
+python3 scripts/register-workers.py  # build and register the deployment; no scans
 docker compose up -d --build
 docker compose run --rm seed domain example.com
 # or: seed fqdn / seed ip / seed netblock / seed port 192.168.1.1:22
@@ -83,7 +86,7 @@ The existing kinds and `value` locators remain:
 
 `value` alone is not an entity key: a named endpoint can have several responding IPs, and the same port number can use TCP or UDP. `meta` retains workflow gates (`allow`, `deny`, `scope`, `profile`, `alive`) and compatibility details. New consumers use the typed fields and `info`.
 
-HTTP tools do **not** listen on raw `port`. `as-url` translates `service` names like `http`/`https` into `url`. httpx and `nuclei` subscribe to `url`. `nuclei-net` takes non-web `service` events (`ssh`, `ssl`, …) and passes `host:port`.
+HTTP screenshot/vulnerability tools do **not** listen on raw `port`. `as-url` translates `service` names like `http`/`https` into `url`. `web-probe` checks unclassified TCP services for HTTP and HTTPS, then emits confirmed `service` observations into that same path. httpx and `nuclei` subscribe to `url`. `nuclei-net` takes non-web `service` events (`ssh`, `ssl`, …) and passes `host:port`.
 
 ## Tool registry
 
@@ -100,7 +103,8 @@ HTTP tools do **not** listen on raw `port`. `as-url` translates `service` names 
 | `nmap-full` | **live `ip`** | `port` | YAML `-sT -sU`; all TCP + common UDP; one scan per address |
 | `nmap-svc` | `port` | `service` | YAML; matching TCP/UDP scan, `-sV` plus `default,safe,discovery` scripts; preserves TLS tunnel |
 | `tlsx` | `port` | `fqdn` | CN/SAN on every open port, not just 443 |
-| `as-url` | `service` | `url` | only if nmap says http(s) |
+| `as-url` | `service` | `url` | only confirmed http(s) service names |
+| `web-probe` | unclassified TCP `service` | `service` | checks HTTP/HTTPS against the observed IP with the requested Host/SNI; no redirects |
 | `httpx` | `url` | `screenshot` | YAML profile; png/jpeg on `data` plus title/status/tech/cdn/asn/jarm |
 | `nuclei` | `url` | `finding` | YAML; HTTP catalog minus dos/fuzz; OAST on |
 | `nuclei-net` | `service` | `finding` | YAML; `-pt ssl,tcp,dns,javascript`; skips http(s) |
@@ -146,7 +150,16 @@ Durable task outcomes and shared tool faults are available independently of watc
 ```bash
 docker compose run --rm work tasks
 docker compose run --rm work tools
+docker compose run --rm work registered
+docker compose run --rm work coverage --scope web1
+docker compose run --rm work coverage --run assessment-1
 docker compose run --rm work resume httpx  # after repairing the tool
 ```
 
 Ordinary failures stop after one execution. Explicitly transient failures get at most three executions by default; publication retries saved output separately. Resuming a repaired tool releases pending work without reopening terminal tasks. See [budgets, configuration, and migration requirements](sdk/WORKFLOW.md) before upgrading an existing cluster.
+
+Coverage reconstructs expected work from retained events and the durable worker registry, including inputs whose worker never started. Each worker registers its actual SDK configuration: subscriptions, identity mode, prerequisites, eligibility rules, and required evidence. There is no central tool list or separate coverage profile. It reports unclaimed work, missing resolution/liveness, expired leases, failed tasks, and required evidence missing from otherwise successful executions. Every known backend and transport keeps its own identity. `--run` includes earlier runs sharing the same scopes because they share task state; an unscoped run therefore includes other unscoped work. Use distinct scopes for independent assessments.
+
+`python3 scripts/register-workers.py` discovers services labeled `io.adama.worker=true` in Compose, invokes each worker with `ADAMA_REGISTER_ONLY=1`, and records the expected inventory using their returned names. Adding a worker means declaring its behavior once in `sdk.Config` and marking its Compose service with `<<: *worker`. Registration also happens on normal startup and survives worker shutdown. Registration-only mode skips executable checks, runtime setup, consumer creation, and handlers.
+
+`work_complete_at_snapshot` applies only to the observed inputs and the reported stream sequence. Missing or unfinished deployment registration, changing state, removed history, or unknown allowlisted workers prevents a complete result. This does not seal a run or prove exact browser backend coverage. The command never retries tasks. See [worker registration and upgrades](sdk/WORKFLOW.md#worker-registration) for other orchestrators and deliberate contract changes.

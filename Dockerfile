@@ -17,6 +17,7 @@ RUN CGO_ENABLED=0 go build -o /out/seed ./cmd/seed \
  && CGO_ENABLED=0 go build -o /out/watch ./cmd/watch \
  && CGO_ENABLED=0 go build -o /out/ctl ./cmd/ctl
 RUN CGO_ENABLED=0 go build -o /out/work ./cmd/work
+RUN CGO_ENABLED=0 go build -o /out/web-probe ./cmd/web-probe
 RUN CGO_ENABLED=0 go build -o /out/reconcile ./cmd/reconcile \
  && CGO_ENABLED=0 go build -o /out/resolve ./cmd/resolve
 
@@ -28,7 +29,12 @@ ENTRYPOINT ["seed"]
 
 FROM alpine:3.21 AS work
 COPY --from=build /out/work /usr/local/bin/work
+WORKDIR /
 ENTRYPOINT ["work"]
+
+FROM alpine:3.21 AS web-probe
+COPY --from=build /out/web-probe /usr/local/bin/web-probe
+ENTRYPOINT ["web-probe"]
 
 FROM alpine:3.21 AS reconcile
 COPY --from=build /out/reconcile /usr/local/bin/reconcile

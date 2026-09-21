@@ -17,12 +17,6 @@ func main() {
 	if file == "" {
 		file = "reports/events.jsonl"
 	}
-	if url == "" {
-		if err := initFile(file); err != nil {
-			slog.Error("initialize report", "err", err)
-			os.Exit(2)
-		}
-	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	err := sdk.Run(ctx, sdk.Config{
@@ -30,6 +24,12 @@ func main() {
 		Observe:    true,
 		MaxPending: 1, // Serialize updates to the file-backed HTML materialization.
 		Kinds:      kinds(),
+		Setup: func(context.Context, *sdk.Bus) error {
+			if url == "" {
+				return initFile(file)
+			}
+			return nil
+		},
 		Handle: func(ctx context.Context, ev event.Event) ([]event.Event, error) {
 			if err := deliver(ctx, url, file, ev); err != nil {
 				return nil, err

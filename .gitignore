@@ -9,7 +9,7 @@
 
 # Test / coverage
 *.out
-coverage.*
+/coverage.*
 *.coverprofile
 profile.cov
 

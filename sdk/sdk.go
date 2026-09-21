@@ -2,6 +2,7 @@ package sdk
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -31,11 +32,12 @@ func NATSURL() string {
 }
 
 type Bus struct {
-	nc     *nats.Conn
-	JS     jetstream.JetStream
-	KV     jetstream.KeyValue
-	Outbox jetstream.ObjectStore
-	Tools  jetstream.KeyValue
+	nc       *nats.Conn
+	JS       jetstream.JetStream
+	KV       jetstream.KeyValue
+	Outbox   jetstream.ObjectStore
+	Tools    jetstream.KeyValue
+	Registry jetstream.KeyValue
 }
 
 func Connect(ctx context.Context, url string) (*Bus, error) {
@@ -75,7 +77,12 @@ func Connect(ctx context.Context, url string) (*Bus, error) {
 		nc.Close()
 		return nil, err
 	}
-	return &Bus{nc: nc, JS: js, KV: kv, Outbox: outbox, Tools: toolState}, nil
+	registry, err := js.CreateOrUpdateKeyValue(ctx, jetstream.KeyValueConfig{Bucket: RegistryBucket})
+	if err != nil {
+		nc.Close()
+		return nil, err
+	}
+	return &Bus{nc: nc, JS: js, KV: kv, Outbox: outbox, Tools: toolState, Registry: registry}, nil
 }
 
 func (b *Bus) Close() { b.nc.Close() }
@@ -119,10 +126,13 @@ type Config struct {
 	URL                string
 	Kinds              []event.Kind
 	AckWait            time.Duration
-	NeedLive           bool                   // skip before dedup unless meta.alive=true
-	Observe            bool                   // observation sinks receive every event; redelivery retains its ID
-	RequiredTools      []string               // fail before consuming targets if a binary is missing
-	Accept             func(event.Event) bool // pure eligibility check, before claiming work
+	NeedLive           bool                              // skip before dedup unless meta.alive=true
+	Observe            bool                              // observation sinks receive every event; redelivery retains its ID
+	RequiredTools      []string                          // fail before consuming targets if a binary is missing
+	Filter             Rule                              // shared, serializable input eligibility
+	NeedBinding        bool                              // fqdn inputs need an explicit forward/requested IP binding
+	Evidence           string                            // positive output required for coverage, e.g. screenshot
+	Setup              func(context.Context, *Bus) error // runtime setup; skipped during registration-only mode
 	MaxAttempts        int
 	MaxPublishAttempts int
 	MaxPending         int
@@ -143,10 +153,15 @@ func Run(ctx context.Context, cfg Config) error {
 	if cfg.Name == "" || cfg.Handle == nil {
 		return fmt.Errorf("worker needs name and handler")
 	}
-	for _, binary := range cfg.RequiredTools {
-		if _, err := exec.LookPath(binary); err != nil {
-			return fmt.Errorf("worker %s prerequisite: %w", cfg.Name, err)
-		}
+	definition := cfg.Definition()
+	if err := definition.Validate(); err != nil {
+		return err
+	}
+	cfg.Kinds = definition.Kinds
+	registerOnly := os.Getenv("ADAMA_REGISTER_ONLY") == "1"
+	replace := os.Getenv("ADAMA_REGISTER_REPLACE") == "1"
+	if replace && !registerOnly {
+		return fmt.Errorf("ADAMA_REGISTER_REPLACE requires ADAMA_REGISTER_ONLY=1")
 	}
 	if cfg.URL == "" {
 		cfg.URL = NATSURL()
@@ -156,6 +171,23 @@ func Run(ctx context.Context, cfg Config) error {
 		return err
 	}
 	defer b.Close()
+	registration, err := b.Register(ctx, definition, replace)
+	if err != nil {
+		return err
+	}
+	if registerOnly {
+		return json.NewEncoder(os.Stdout).Encode(registration)
+	}
+	for _, binary := range cfg.RequiredTools {
+		if _, err := exec.LookPath(binary); err != nil {
+			return fmt.Errorf("worker %s prerequisite: %w", cfg.Name, err)
+		}
+	}
+	if cfg.Setup != nil {
+		if err := cfg.Setup(ctx, b); err != nil {
+			return err
+		}
+	}
 	cons, err := b.consumer(ctx, cfg)
 	if err != nil {
 		return err

@@ -2,19 +2,24 @@ package asurl
 
 import (
 	"net/netip"
+	"slices"
 	"strconv"
 	"strings"
 
 	"adama/event"
+	"adama/sdk"
 )
 
-var web = map[string]bool{
-	"http": true, "https": true, "http-proxy": true, "https-alt": true,
-	"http-alt": true, "ssl/http": true, "ssl/https": true,
-}
+var web = []string{"http", "https", "http-proxy", "https-alt", "http-alt", "ssl/http", "ssl/https"}
 
 func IsWeb(name string) bool {
-	return web[strings.ToLower(strings.TrimSpace(name))]
+	return slices.Contains(web, strings.ToLower(strings.TrimSpace(name)))
+}
+
+func WebServiceRule() sdk.Rule { return sdk.FieldIn("service", web...) }
+func InputRule() sdk.Rule {
+	return sdk.All(WebServiceRule(), sdk.FieldIn("proto", "", string(event.TCP)),
+		sdk.Any(sdk.Has("host"), sdk.All(sdk.Has("name"), sdk.FieldIn("name_role", string(event.NameRequested)))))
 }
 
 func URL(ev event.Event) (string, bool) {

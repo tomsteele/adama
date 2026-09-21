@@ -56,6 +56,12 @@ type Input struct {
 	Target
 }
 
+// BoundName distinguishes forward/requested bindings from names merely
+// mentioned in certificates or PTR records.
+func BoundName(ev Event) bool {
+	return ev.Host != "" && ev.Name != "" && (ev.NameRole == NameDNSA || ev.NameRole == NameDNSAAAA || ev.NameRole == NameRequested)
+}
+
 func (e Event) AsInput() *Input {
 	return &Input{Kind: e.Kind, Value: e.Value, Target: e.Target}
 }
