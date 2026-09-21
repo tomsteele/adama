@@ -1,10 +1,21 @@
 name: httpx
 kinds: [url]
 ack_wait: 5m
-# screenshot + the usual httpx probes. drop/add flags here; worker only appends -u and -srd.
+# These extra arguments apply when a hostname URL has a known backend IP.
+# The task-local resolver pins only that name; other names use resolv.conf.
+# Set resolvers: ["10.0.0.53:53"] to choose upstream DNS in your environment.
+bound_args:
+  - -r
+  - "{resolver}"
+  - -ho
+  - "--host-resolver-rules=MAP {name} {ip}"
+  - -ho
+  - --no-proxy-server
+# Screenshot + usual probes. Preserve the scheme supplied by as-url.
 httpx_args:
   - -silent
   - -json
+  - -no-fallback-scheme
   - -ss
   - -system-chrome
   - -no-screenshot-full-page

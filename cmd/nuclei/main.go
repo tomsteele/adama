@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -10,7 +9,6 @@ import (
 
 	"adama/event"
 	"adama/internal/asurl"
-	"adama/internal/toolrun"
 	"adama/sdk"
 )
 
@@ -31,18 +29,10 @@ func main() {
 		Name:          p.Name,
 		Kinds:         p.kinds(),
 		AckWait:       p.ackWait(),
+		TaskTimeout:   p.taskTimeout(),
 		Filter:        sdk.Any(sdk.Not(sdk.FieldIn("kind", string(event.KindService))), sdk.Not(asurl.WebServiceRule())),
 		Handle: func(ctx context.Context, ev event.Event) ([]event.Event, error) {
-			u, ok := target(ev)
-			if !ok {
-				slog.Info("nuclei skip", "kind", ev.Kind, "value", ev.Value)
-				return nil, nil
-			}
-			args := append(append([]string{}, p.NucleiArgs...), "-u", u)
-			out, runErr := toolrun.Run(ctx, "nuclei", args, nil)
-			evs, err := parseHits(out, ev)
-			slog.Info("nuclei", "target", u, "findings", len(evs))
-			return evs, errors.Join(runErr, err)
+			return scan(ctx, p, ev)
 		},
 	})
 	if err != nil && ctx.Err() == nil {

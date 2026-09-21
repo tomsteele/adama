@@ -1,0 +1,14 @@
+id: adama-tcp-fixture
+info:
+  name: Local TCP endpoint fixture
+  author: adama
+  severity: info
+tcp:
+  - host:
+      - "{{Hostname}}"
+    inputs:
+      - data: "hello\r\n"
+    read-size: 128
+    matchers:
+      - type: word
+        words: ["adama-backend"]

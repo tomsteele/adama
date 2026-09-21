@@ -4,7 +4,9 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -19,7 +21,11 @@ type nucleiHit struct {
 	CurlCommand      string          `json:"curl-command"`
 	Type             string          `json:"type"`
 	IP               string          `json:"ip"`
+	Host             string          `json:"host"`
+	Port             string          `json:"port"`
 	MatchedAt        string          `json:"matched-at"`
+	MatcherStatus    *bool           `json:"matcher-status"`
+	Error            string          `json:"error"`
 	Info             struct {
 		Name        string   `json:"name"`
 		Severity    string   `json:"severity"`
@@ -30,6 +36,7 @@ type nucleiHit struct {
 
 func parseHits(stdout []byte, in event.Event) ([]event.Event, error) {
 	var evs []event.Event
+	var resultErr error
 	sc := bufio.NewScanner(bytes.NewReader(stdout))
 	sc.Buffer(make([]byte, 0, 64*1024), 4<<20)
 	for sc.Scan() {
@@ -42,10 +49,19 @@ func parseHits(stdout []byte, in event.Event) ([]event.Event, error) {
 			continue
 		}
 		if err := json.Unmarshal(line, &hit); err != nil {
-			return evs, fmt.Errorf("nuclei result: %w", err)
+			return evs, errors.Join(resultErr, fmt.Errorf("nuclei result: %w", err))
 		}
 		if hit.TemplateID == "" {
-			return evs, fmt.Errorf("nuclei result missing template ID")
+			return evs, errors.Join(resultErr, fmt.Errorf("nuclei result missing template ID"))
+		}
+		if hit.Error != "" {
+			if resultErr == nil {
+				resultErr = fmt.Errorf("nuclei template %s: %s", hit.TemplateID, hit.Error)
+			}
+			continue
+		}
+		if hit.MatcherStatus != nil && !*hit.MatcherStatus {
+			continue
 		}
 		t := findingTarget(hit, in)
 		ev := event.Event{
@@ -76,9 +92,10 @@ func parseHits(stdout []byte, in event.Event) ([]event.Event, error) {
 		for k, v := range ev.Meta {
 			ev.Info[k] = v
 		}
+		ev.Info["endpoint_evidence"] = "scanner_reported"
 		evs = append(evs, ev)
 	}
-	return evs, sc.Err()
+	return evs, errors.Join(resultErr, sc.Err())
 }
 
 func findingTarget(hit nucleiHit, in event.Event) event.Target {
@@ -91,22 +108,25 @@ func findingTarget(hit nucleiHit, in event.Event) event.Target {
 		}
 		t, _ = event.URLTarget(u)
 	case "ssl", "tcp", "network":
-		t = in.Target
-		t.Host = "" // The scanner's IP below is authoritative.
 		fromURL, urlErr := event.URLTarget(hit.MatchedAt)
 		if hit.Type == "ssl" && urlErr == nil {
 			t = fromURL
-		} else if h, p, err := event.SplitHostPort(hit.MatchedAt); err == nil {
-			t.Port = p
+		} else {
+			h, p, err := event.SplitHostPort(hit.MatchedAt)
+			if err != nil {
+				h = hit.Host
+				p, _ = strconv.Atoi(hit.Port)
+			}
+			if p > 0 && p <= 65535 {
+				t.Port = p
+			}
 			if ip, err := event.CanonIP(h); err == nil {
 				t.Host = ip
-			} else {
+			} else if h != "" {
 				t.Name, t.NameRole = event.CanonFQDN(h), event.NameRequested
 			}
 		}
-		if hit.Type == "ssl" {
-			t.Proto = event.TCP
-		}
+		t.Proto = event.TCP // This is the scanner's transport, never an ancestor's UDP.
 	}
 	if ip, err := event.CanonIP(hit.IP); err == nil {
 		t.Host = ip

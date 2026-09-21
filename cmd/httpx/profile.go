@@ -14,6 +14,8 @@ type profile struct {
 	Name      string   `yaml:"name"`
 	Kinds     []string `yaml:"kinds"`
 	HttpxArgs []string `yaml:"httpx_args"`
+	BoundArgs []string `yaml:"bound_args"`
+	Resolvers []string `yaml:"resolvers"`
 	AckWait   string   `yaml:"ack_wait"`
 }
 

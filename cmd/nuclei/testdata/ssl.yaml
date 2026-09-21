@@ -1,0 +1,11 @@
+id: adama-ssl-fixture
+info:
+  name: Local TLS endpoint fixture
+  author: adama
+  severity: info
+ssl:
+  - address: "{{Hostname}}"
+    scan_mode: ctls
+    matchers:
+      - type: dsl
+        dsl: ["true"]

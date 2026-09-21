@@ -102,14 +102,30 @@ HTTP screenshot/vulnerability tools do **not** listen on raw `port`. `as-url` tr
 | `nmap-http` | live `ip`, live `fqdn` | `port` | YAML; 25 common HTTP/S ports; same live gate |
 | `nmap-full` | **live `ip`** | `port` | YAML `-sT -sU`; all TCP + common UDP; one scan per address |
 | `nmap-svc` | `port` | `service` | YAML; matching TCP/UDP scan, `-sV` plus `default,safe,discovery` scripts; preserves TLS tunnel |
-| `tlsx` | `port` | `fqdn` | CN/SAN on every open port, not just 443 |
+| `tlsx` | `port` | `fqdn` | TCP CN/SAN on every open port number; unsupported transports remain failed work |
 | `as-url` | `service` | `url` | only confirmed http(s) service names |
 | `web-probe` | unclassified TCP `service` | `service` | checks HTTP/HTTPS against the observed IP with the requested Host/SNI; no redirects |
 | `httpx` | `url` | `screenshot` | YAML profile; png/jpeg on `data` plus title/status/tech/cdn/asn/jarm |
 | `nuclei` | `url` | `finding` | YAML; HTTP catalog minus dos/fuzz; OAST on |
-| `nuclei-net` | `service` | `finding` | YAML; `-pt ssl,tcp,dns,javascript`; skips http(s) |
+| `nuclei-net` | `service` | `finding` | YAML; IP-bound `-pt ssl,tcp`; skips http(s); unsupported transports remain failed work |
 | `report` | `screenshot`, `service`, `finding` | — | PoC HTML sink |
 | `export` | all kinds | — | append-only JSONL (`EXPORT_FILE`) |
+
+For hostname URLs with a known IP, `httpx` uses an independent, loopback DNS override for each task and a Chromium hostname mapping. This preserves the original URL, Host header, SNI, port, path, and query while selecting that backend. The shipped profile disables scheme fallback. Each invocation writes to its own `screenshots/capture-*` directory so replicas scanning different IPs for the same URL cannot overwrite artifacts. Results retain `info.artifact_dir`.
+
+These controls live in `profiles/httpx.yaml`: `bound_args` expands `{resolver}`, `{name}`, and `{ip}` for bound hostname inputs. Optional `resolvers` selects upstream DNS (`IP:port` entries); otherwise other names use the container's `resolv.conf`. The override is routing data and is not exported as observed A/AAAA/CNAME records. Custom profiles should retain both scanner and browser binding controls; adding a proxy or changing those controls needs an endpoint integration check. A missing `bound_args` block pauses the tool on bound work instead of silently re-resolving it. No deployment-wide DNS change or privileged port is required. Upgrading the worker does not reopen completed or failed work; use a new scope when rescanning earlier results.
+
+Browser redirects remain enabled. The top-level IP on a screenshot identifies the HTTP probe; `info.browser_endpoint_evidence=unreported` means HTTPX did not expose the final browser connection. Binding the initial hostname does not prove the endpoint of a redirected screenshot. See [local scanner integration checks](cmd/httpx/TESTING.md).
+
+Both Nuclei profiles use a task-local resolver to select each known backend, preserving the hostname for ordinary/raw HTTP and TCP/TLS requests. YAML `bound_args` takes `{resolver_file}`; `resolvers` optionally selects upstream DNS. Only the input hostname is bound; other names, including redirect destinations, resolve normally. The shipped URL profile selects HTTP templates; the network profile selects TCP/TLS templates. Headless templates need separate browser controls.
+
+The network profile declares `service_transports: [tcp]`. Unsupported inputs stay in task/coverage accounting and fail once before launching the scanner; they are not silently skipped or tested over a different transport. Successful network request logs are checked against the requested hostname, port, and transport, even without a finding. Unexpected-endpoint findings are retained with `info.requested_endpoint_status=mismatch`, and the task fails. TLSX also consumes every open port but reports unsupported transports and invalid targets as terminal failures.
+
+DNS and JavaScript templates are no longer included in the generic service profile. DNS templates query configured resolvers rather than necessarily testing the observed DNS service, and synthetic binding answers are not DNS evidence. Mixing DNS templates into a bound scan pauses that worker and suppresses those DNS findings. JavaScript can choose arbitrary transports/endpoints; its current logs do not establish service coverage. Profiles remain editable without a central tool registry, but changing protocol selection requires corresponding endpoint evidence. These checks use scanner reports: SSL request traces can retain the original input when a template overrides its address, so exact SSL non-match destination accounting remains incomplete.
+
+Both Nuclei workers inspect request traces configured by `trace_args` (`{trace_file}`). Request errors fail the task while retaining valid findings; a successful request with no match is a normal completion. Empty/missing/malformed execution evidence cannot establish completion. Negative matcher records and execution errors are not exported as findings. Missing trace/binding configuration or a missing template catalog pauses the tool instead of repeatedly launching it. Findings retain `scan_requests`, `scan_request_errors`, and `endpoint_evidence=scanner_reported` in `info`; redirected response attribution remains limited by Nuclei's output.
+
+Nuclei profiles use `task_timeout` (15m HTTP, 10m network) for the SDK deadline, so timeout/cancellation remains visible with the existing finite attempt budget. Prefer this to a scanner-controlled early-exit flag such as `-max-time`, which does not itself prove the selected templates finished. See [Nuclei integration checks](cmd/nuclei/TESTING.md). Request traces account for emitted execution outcomes; they are not a certificate that every template in a catalog was applicable or executed.
 
 `-Pn` scanners (`nmap-quick`, `nmap-http`, `nmap-full`) only run on `ip`/`fqdn` with `meta.alive=true`. `resolve` establishes name/address pairs before `nmap-discover` probes each specific IP. DNS answers are not liveness evidence. Full stays IP-only so ten vhosts share one `-sT -sU`. Quick/http take live names; `reconcile` also pairs late names with previously discovered ports outside those profiles. `tlsx` follows every open `port`.
 

@@ -1,0 +1,14 @@
+id: adama-tcp-other-port-fixture
+info:
+  name: Local template overriding the requested port
+  author: adama
+  severity: info
+tcp:
+  - host:
+      - "{{Host}}:{{OtherPort}}"
+    inputs:
+      - data: "hello\r\n"
+    read-size: 128
+    matchers:
+      - type: word
+        words: ["never-matches"]

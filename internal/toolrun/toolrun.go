@@ -42,7 +42,7 @@ func Failure(ctx context.Context, binary string, err error, stderr []byte) error
 		return sdk.ToolUnavailable(failure)
 	}
 	lower := strings.ToLower(text)
-	for _, marker := range []string{"unknown flag", "unknown shorthand flag", "flag provided but not defined", "unrecognized option", "invalid option", "chrome browser is not installed", "could not create runner"} {
+	for _, marker := range []string{"unknown flag", "unknown shorthand flag", "flag provided but not defined", "unrecognized option", "invalid option", "chrome browser is not installed", "could not create runner", "no templates provided for scan"} {
 		if strings.Contains(lower, marker) {
 			return sdk.ToolUnavailable(failure)
 		}

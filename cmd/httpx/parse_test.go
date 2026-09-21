@@ -145,3 +145,16 @@ func TestScreenshotOutcomeDoesNotCompleteWrongBackend(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestScreenshotOutcomeRequiresRequestedURL(t *testing.T) {
+	in := event.Event{Kind: event.KindURL, Value: "https://app.example.com:8443/Admin?Token=AbC", Target: event.Target{Host: "192.0.2.1"}}
+	for _, changed := range []string{"http://app.example.com:8443/Admin?Token=AbC", "https://app.example.com/Admin?Token=AbC", "https://other.example.com:8443/Admin?Token=AbC", "https://app.example.com:8443/admin?Token=AbC", "https://app.example.com:8443/Admin?Token=abc"} {
+		out, err := screenshotEvents(in, []result{{URL: changed, HostIP: in.Host, ScreenshotBytes: screenshotPNG(t)}})
+		if err == nil || len(out) != 1 || out[0].Info["requested_url_status"] != "mismatch" {
+			t.Fatalf("wrong URL completed: %s", changed)
+		}
+	}
+	if !sameURL("https://app.example.com", "https://APP.example.com:443/") {
+		t.Fatal("equivalent URL rejected")
+	}
+}

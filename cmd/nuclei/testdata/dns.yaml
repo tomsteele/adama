@@ -1,0 +1,11 @@
+id: adama-dns-fixture
+info:
+  name: Synthetic DNS must not become a finding
+  author: adama
+  severity: info
+dns:
+  - name: "{{FQDN}}"
+    type: A
+    matchers:
+      - type: word
+        words: ["127.0.0.2"]

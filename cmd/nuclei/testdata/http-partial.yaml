@@ -1,0 +1,16 @@
+id: adama-partial-fixture
+info:
+  name: Local partially failing HTTP scan
+  author: adama
+  severity: info
+http:
+  - method: GET
+    path: ["{{RootURL}}/ok"]
+    matchers:
+      - type: word
+        words: ["adama-backend"]
+  - method: GET
+    path: ["{{RootURL}}/broken"]
+    matchers:
+      - type: word
+        words: ["adama-backend"]

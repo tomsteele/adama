@@ -2,14 +2,12 @@ package main
 
 import (
 	"context"
-	"errors"
 	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
 
 	"adama/event"
-	"adama/internal/toolrun"
 	"adama/sdk"
 )
 
@@ -36,12 +34,7 @@ func main() {
 		Kinds:         p.kinds(),
 		AckWait:       p.ackWait(),
 		Handle: func(ctx context.Context, ev event.Event) ([]event.Event, error) {
-			args := append(append([]string{}, p.HttpxArgs...), "-u", ev.Value, "-srd", dir)
-			out, runErr := toolrun.Run(ctx, "httpx", args, nil)
-			results, parseErr := parseResults(out)
-			err := errors.Join(runErr, parseErr)
-			events, outcomeErr := screenshotEvents(ev, results)
-			return events, errors.Join(err, outcomeErr)
+			return scan(ctx, p, dir, ev)
 		},
 	})
 	if err != nil && ctx.Err() == nil {

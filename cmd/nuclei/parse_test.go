@@ -21,6 +21,9 @@ func TestLoadProfile(t *testing.T) {
 	if n.Name != "nuclei-net" || n.Kinds[0] != "service" || len(n.NucleiArgs) == 0 {
 		t.Fatalf("%+v", n)
 	}
+	if p.taskTimeout().Minutes() != 15 || n.taskTimeout().Minutes() != 10 {
+		t.Fatal("missing worker deadlines")
+	}
 }
 
 func TestTarget(t *testing.T) {
@@ -73,5 +76,19 @@ func TestSSLFindingWithExplicitURLPort(t *testing.T) {
 	ev, err := got[0].Canonical()
 	if err != nil || ev.Host != "2001:db8::2" || ev.Name != "actual.example.com" || ev.Port != 8443 || ev.Proto != event.TCP || !ev.TLS {
 		t.Fatalf("lost SSL endpoint %+v %v", ev, err)
+	}
+}
+
+func TestNetworkFindingDoesNotInheritUnobservedIdentity(t *testing.T) {
+	in := event.Event{Kind: event.KindService, Value: "old.example:53/domain", Target: event.Target{Host: "192.0.2.1", Name: "old.example", NameRole: event.NameRequested, Port: 53, Proto: event.UDP, SNI: "old.example", HTTPHost: "old.example", URL: "https://old.example"}}
+	for _, matched := range []string{"192.0.2.2:5353", ""} {
+		hit := nucleiHit{Type: "tcp", IP: "192.0.2.2", MatchedAt: matched}
+		target := findingTarget(hit, in)
+		if target.Host != "192.0.2.2" || target.Name != "" || target.Proto != event.TCP || target.SNI != "" || target.HTTPHost != "" || target.URL != "" {
+			t.Fatalf("inherited unrelated identity: %+v", target)
+		}
+		if matched == "" && target.Port != 0 || matched != "" && target.Port != 5353 {
+			t.Fatal(target)
+		}
 	}
 }

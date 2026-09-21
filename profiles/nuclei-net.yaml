@@ -1,7 +1,16 @@
 name: nuclei-net
 kinds: [service]
 ack_wait: 15m
-# worker appends -u host:port (skips http/https). no http/headless/code.
+task_timeout: 10m
+# Worker appends -u host:port (skips http/https). Unsupported transports fail
+# once, visibly; a TCP scan must never establish coverage of a UDP endpoint.
+service_transports: [tcp]
+bound_args:
+  - -r
+  - "{resolver_file}"
+trace_args:
+  - -trace-log
+  - "{trace_file}"
 nuclei_args:
   - -silent
   - -jsonl
@@ -9,7 +18,9 @@ nuclei_args:
   - -ss
   - host-spray
   - -pt
-  - ssl,tcp,dns,javascript
+  # DNS templates query resolvers, not this service endpoint. JavaScript can
+  # choose its own transport/endpoint; it needs template-specific accounting.
+  - ssl,tcp
   - -etags
   - dos,fuzz
   - -rl
@@ -20,6 +31,4 @@ nuclei_args:
   - "2"
   - -timeout
   - "10"
-  - -max-time
-  - 10m
   - -duc

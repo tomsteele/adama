@@ -1,0 +1,12 @@
+id: adama-raw-fixture
+info:
+  name: Local raw HTTP endpoint fixture
+  author: adama
+  severity: info
+http:
+  - raw:
+      - "GET /Admin HTTP/1.1\r\nHost: {{Hostname}}\r\nConnection: close\r\n\r\n"
+    unsafe: true
+    matchers:
+      - type: word
+        words: ["adama-backend"]

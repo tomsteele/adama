@@ -1,13 +1,22 @@
 name: nuclei
 kinds: [url]
 ack_wait: 20m
-# worker only appends -u. full catalog on a live URL (not -as).
-# drop dos/fuzz. keep interactsh (do not add -ni). add -headless if chrome exists.
+task_timeout: 15m
+# HTTP catalog on a live URL (not -as). Other protocols use nuclei-net.
+# Keep interactsh (do not add -ni). Headless needs separate browser binding.
 # swap in -as for a faster wappalyzer-tagged pass.
+bound_args:
+  - -r
+  - "{resolver_file}"
+trace_args:
+  - -trace-log
+  - "{trace_file}"
 nuclei_args:
   - -silent
   - -jsonl
   - -omit-template
+  - -pt
+  - http
   - -follow-redirects
   - -ss
   - host-spray
@@ -21,6 +30,4 @@ nuclei_args:
   - "2"
   - -timeout
   - "10"
-  - -max-time
-  - 15m
   - -duc

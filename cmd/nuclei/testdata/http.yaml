@@ -1,0 +1,15 @@
+id: adama-http-fixture
+info:
+  name: Local endpoint fixture
+  author: adama
+  severity: info
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+    matchers:
+      - type: word
+        words: ["adama-backend"]
+    extractors:
+      - type: regex
+        regex: ["adama-backend=[^<]+"]
