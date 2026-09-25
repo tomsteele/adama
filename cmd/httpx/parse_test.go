@@ -129,29 +129,11 @@ func TestMissingOrInvalidScreenshotIsNotCaptured(t *testing.T) {
 	}
 }
 
-func TestScreenshotOutcomeDoesNotCompleteWrongBackend(t *testing.T) {
-	in := event.Event{Kind: event.KindURL, Value: "https://app.example.com", Target: event.Target{Host: "192.0.2.1"}}
-	out, err := screenshotEvents(in, []result{{URL: in.Value, HostIP: "192.0.2.2", ScreenshotBytes: screenshotPNG(t)}})
-	if err == nil || len(out) != 1 || out[0].Host != "192.0.2.2" || out[0].Info["requested_endpoint_status"] != "mismatch" {
-		t.Fatalf("wrong backend reported complete %+v %v", out, err)
-	}
-	if _, err := screenshotEvents(in, nil); err == nil {
-		t.Fatal("empty output completed screenshot task")
-	}
-	if _, err := screenshotEvents(in, []result{{URL: in.Value, HostIP: in.Host}}); err == nil {
-		t.Fatal("missing image completed screenshot task")
-	}
-	if _, err := screenshotEvents(in, []result{{URL: in.Value, HostIP: in.Host, ScreenshotBytes: screenshotPNG(t)}}); err != nil {
-		t.Fatal(err)
-	}
-}
-
-func TestScreenshotOutcomeRequiresRequestedURL(t *testing.T) {
-	in := event.Event{Kind: event.KindURL, Value: "https://app.example.com:8443/Admin?Token=AbC", Target: event.Target{Host: "192.0.2.1"}}
+func TestRequestedURLComparison(t *testing.T) {
+	in := "https://app.example.com:8443/Admin?Token=AbC"
 	for _, changed := range []string{"http://app.example.com:8443/Admin?Token=AbC", "https://app.example.com/Admin?Token=AbC", "https://other.example.com:8443/Admin?Token=AbC", "https://app.example.com:8443/admin?Token=AbC", "https://app.example.com:8443/Admin?Token=abc"} {
-		out, err := screenshotEvents(in, []result{{URL: changed, HostIP: in.Host, ScreenshotBytes: screenshotPNG(t)}})
-		if err == nil || len(out) != 1 || out[0].Info["requested_url_status"] != "mismatch" {
-			t.Fatalf("wrong URL completed: %s", changed)
+		if sameURL(in, changed) {
+			t.Fatalf("different URL matched: %s", changed)
 		}
 	}
 	if !sameURL("https://app.example.com", "https://APP.example.com:443/") {

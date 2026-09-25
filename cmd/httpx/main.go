@@ -8,6 +8,7 @@ import (
 	"syscall"
 
 	"adama/event"
+	"adama/internal/browsercapture"
 	"adama/sdk"
 )
 
@@ -28,7 +29,7 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	err = sdk.Run(ctx, sdk.Config{
-		RequiredTools: screenshotTools(p.HttpxArgs),
+		RequiredTools: []string{"httpx", browsercapture.ChromePath()},
 		Name:          p.Name,
 		Evidence:      "screenshot",
 		Kinds:         p.kinds(),
@@ -41,19 +42,4 @@ func main() {
 		slog.Error("run", "err", err)
 		os.Exit(1)
 	}
-}
-
-func screenshotTools(args []string) []string {
-	tools := []string{"httpx"}
-	for _, arg := range args {
-		if arg == "-system-chrome" {
-			chrome := os.Getenv("CHROME_PATH")
-			if chrome == "" {
-				chrome = "chromium-browser"
-			}
-			tools = append(tools, chrome)
-			break
-		}
-	}
-	return tools
 }

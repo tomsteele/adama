@@ -36,6 +36,7 @@ flowchart LR
   events --> nuclei
   events --> nucleiNet[nuclei-net]
   httpx -->|screenshot| events
+  httpx -->|observed redirect url| events
   nuclei -->|finding| events
   nucleiNet -->|finding| events
   events --> report
@@ -105,17 +106,19 @@ HTTP screenshot/vulnerability tools do **not** listen on raw `port`. `as-url` tr
 | `tlsx` | `port` | `fqdn` | TCP CN/SAN on every open port number; unsupported transports remain failed work |
 | `as-url` | `service` | `url` | only confirmed http(s) service names |
 | `web-probe` | unclassified TCP `service` | `service` | checks HTTP/HTTPS against the observed IP with the requested Host/SNI; no redirects |
-| `httpx` | `url` | `screenshot` | YAML profile; png/jpeg on `data` plus title/status/tech/cdn/asn/jarm |
+| `httpx` | `url` | `screenshot`, `url` | HTTPX probes plus Chromium screenshots; final browser endpoint and observed redirect destinations |
 | `nuclei` | `url` | `finding` | YAML; HTTP catalog minus dos/fuzz; OAST on |
 | `nuclei-net` | `service` | `finding` | YAML; IP-bound `-pt ssl,tcp`; skips http(s); unsupported transports remain failed work |
 | `report` | `screenshot`, `service`, `finding` | — | PoC HTML sink |
 | `export` | all kinds | — | append-only JSONL (`EXPORT_FILE`) |
 
-For hostname URLs with a known IP, `httpx` uses an independent, loopback DNS override for each task and a Chromium hostname mapping. This preserves the original URL, Host header, SNI, port, path, and query while selecting that backend. The shipped profile disables scheme fallback. Each invocation writes to its own `screenshots/capture-*` directory so replicas scanning different IPs for the same URL cannot overwrite artifacts. Results retain `info.artifact_dir`.
+For hostname URLs with a known IP, `httpx` uses an independent, loopback DNS override for the HTTPX probe and a Chromium hostname mapping for the browser. This preserves the original URL, Host header, SNI, port, path, and query while selecting that backend. The shipped profile disables HTTPX scheme fallback. Each invocation writes `screenshot.png` in its own `screenshots/capture-*` directory so replicas cannot overwrite artifacts. Results retain `info.artifact_dir`.
 
-These controls live in `profiles/httpx.yaml`: `bound_args` expands `{resolver}`, `{name}`, and `{ip}` for bound hostname inputs. Optional `resolvers` selects upstream DNS (`IP:port` entries); otherwise other names use the container's `resolv.conf`. The override is routing data and is not exported as observed A/AAAA/CNAME records. Custom profiles should retain both scanner and browser binding controls; adding a proxy or changing those controls needs an endpoint integration check. A missing `bound_args` block pauses the tool on bound work instead of silently re-resolving it. No deployment-wide DNS change or privileged port is required. Upgrading the worker does not reopen completed or failed work; use a new scope when rescanning earlier results.
+These controls live in `profiles/httpx.yaml`: `bound_args` supplies the HTTPX resolver, while `browser.bound_args` supplies Chromium's hostname mapping. Optional `resolvers` selects upstream DNS for HTTPX (`IP:port` entries); Chromium resolves other names normally. The override is routing data and is not exported as observed DNS answers. Missing binding controls pause bound work. Chromium remains inside the same Docker worker; the worker uses its debugging API to capture the image and response identity together. Custom profiles should move screenshot/headless options out of `httpx_args` into the `browser` block. No extra container or deployment-wide DNS change is needed. Upgrades do not reopen completed or failed work; use a new scope for a deliberate rescan.
 
-Browser redirects remain enabled. The top-level IP on a screenshot identifies the HTTP probe; `info.browser_endpoint_evidence=unreported` means HTTPX did not expose the final browser connection. Binding the initial hostname does not prove the endpoint of a redirected screenshot. See [local scanner integration checks](cmd/httpx/TESTING.md).
+Browser navigation follows HTTP redirects and JavaScript/meta-refresh navigation observed during capture. A screenshot's top-level URL, hostname, IP, and port describe the final main document. `input` preserves the original task, while `info.initial_url`, `initial_host`, `final_url`, `response_url`, and JSON-string `redirect_chain` preserve the path taken. `endpoint_evidence=browser_document` and `browser_endpoint_evidence=cdp_response` identify the evidence source. Iframes and other resources cannot replace the document's endpoint. HTTPX metadata is kept under `probe_*` keys so initial-page technology/title/ASN results are not attributed to the redirected page.
+
+Each observed redirect destination is also published as a bound `url` for downstream tools, with normal gates and lineage inherited by the SDK. `browser.max_redirects` defaults to 10 and is carried across those URL tasks through `meta.redirect_depth`; zero permits only the initial document. Loops and exhausted budgets fail without an unbounded retry. Missing or changing endpoint evidence also fails, preserving already observed responses. `browser.timeout` bounds navigation (30s by default), and `browser.idle` waits for navigation to settle (1s). These settings are editable; a screenshot describes the page at capture time, not navigation scheduled arbitrarily far into the future. See [local scanner integration checks](cmd/httpx/TESTING.md).
 
 Both Nuclei profiles use a task-local resolver to select each known backend, preserving the hostname for ordinary/raw HTTP and TCP/TLS requests. YAML `bound_args` takes `{resolver_file}`; `resolvers` optionally selects upstream DNS. Only the input hostname is bound; other names, including redirect destinations, resolve normally. The shipped URL profile selects HTTP templates; the network profile selects TCP/TLS templates. Headless templates need separate browser controls.
 

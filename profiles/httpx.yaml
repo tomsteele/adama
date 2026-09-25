@@ -7,22 +7,28 @@ ack_wait: 5m
 bound_args:
   - -r
   - "{resolver}"
-  - -ho
-  - "--host-resolver-rules=MAP {name} {ip}"
-  - -ho
-  - --no-proxy-server
-# Screenshot + usual probes. Preserve the scheme supplied by as-url.
+browser:
+  timeout: 30s
+  idle: 1s
+  max_redirects: 10
+  width: 1080
+  height: 1920
+  full_page: false
+  bound_args:
+    - "--host-resolver-rules=MAP {name} {ip}"
+  args:
+    - --no-sandbox
+    - --disable-dev-shm-usage
+    - --ignore-certificate-errors
+    - --no-proxy-server
+    - --disable-quic
+    - --hide-scrollbars
+# HTTP probes remain independent of the browser's final document. Chromium
+# captures screenshots directly so each image has its own response endpoint.
 httpx_args:
   - -silent
   - -json
   - -no-fallback-scheme
-  - -ss
-  - -system-chrome
-  - -no-screenshot-full-page
-  - -ho
-  - --no-sandbox
-  - -ho
-  - --disable-dev-shm-usage
   - -title
   - -sc
   - -td
