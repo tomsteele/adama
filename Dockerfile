@@ -80,6 +80,7 @@ COPY --from=build /out/tlsx /usr/local/bin/tlsx-worker
 ENTRYPOINT ["tlsx-worker"]
 
 FROM projectdiscovery/nuclei:latest AS nuclei
+RUN nuclei -update-templates
 COPY --from=build /out/nuclei /usr/local/bin/nuclei-worker
 COPY profiles /profiles
 ENV NUCLEI_PROFILE=/profiles/nuclei.yaml
