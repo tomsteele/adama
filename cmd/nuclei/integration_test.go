@@ -29,6 +29,17 @@ func integrationProfile(t *testing.T, file, template string) profile {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// -t is repeatable: replace the production catalog instead of adding the
+	// fixtures to it, keeping integration scans confined to local templates.
+	var args []string
+	for i := 0; i < len(p.NucleiArgs); i++ {
+		if p.NucleiArgs[i] == "-t" {
+			i++
+			continue
+		}
+		args = append(args, p.NucleiArgs[i])
+	}
+	p.NucleiArgs = args
 	p.NucleiArgs = append(p.NucleiArgs, "-t", template, "-ni", "-timeout", "2", "-retries", "0")
 	p.Resolvers = []string{"127.0.0.1:1"}
 	return p

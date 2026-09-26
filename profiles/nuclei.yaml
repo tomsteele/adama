@@ -12,6 +12,8 @@ trace_args:
   - -trace-log
   - "{trace_file}"
 nuclei_args:
+  - -t
+  - /opt/nuclei-templates
   - -silent
   - -jsonl
   - -omit-template

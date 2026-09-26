@@ -80,7 +80,13 @@ COPY --from=build /out/tlsx /usr/local/bin/tlsx-worker
 ENTRYPOINT ["tlsx-worker"]
 
 FROM projectdiscovery/nuclei:latest AS nuclei
-RUN nuclei -update-templates
+# Update-only mode can exit successfully after an installation warning. Verify
+# both catalogs offline so an image without usable templates cannot ship.
+RUN nuclei -update-templates -update-template-dir /opt/nuclei-templates \
+ && nuclei -duc -silent -tl -t /opt/nuclei-templates -pt http -etags dos,fuzz > /tmp/nuclei-http-templates.txt \
+ && grep -qE '\.ya?ml$' /tmp/nuclei-http-templates.txt \
+ && nuclei -duc -silent -tl -t /opt/nuclei-templates -pt ssl,tcp -etags dos,fuzz > /tmp/nuclei-net-templates.txt \
+ && grep -qE '\.ya?ml$' /tmp/nuclei-net-templates.txt
 COPY --from=build /out/nuclei /usr/local/bin/nuclei-worker
 COPY profiles /profiles
 ENV NUCLEI_PROFILE=/profiles/nuclei.yaml

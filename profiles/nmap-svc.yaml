@@ -5,6 +5,5 @@ ack_wait: 10m
 ipv6_args: ["-6"]
 transport_args:
   tcp: ["-sT"]
-  udp: ["-sU"]
 hostname_args: ["--script-args", "tls.servername={name},http.host={name}"]
 nmap_args: ["-Pn", "-n", "--open", "-sV", "--script", "default,safe,discovery"]

@@ -55,6 +55,8 @@ docker compose logs -f watch
 
 Scan only hosts you are allowed to touch. Tool flags live in `profiles/*.yaml` (`NMAP_PROFILE`, `HTTPX_PROFILE`, `NUCLEI_PROFILE`). NATS payload is 8MB (`nats.conf`). Live work is `watch` (`http://127.0.0.1:8080` or `docker compose logs -f watch`). Results are `reports/report.html`. Durable JSONL is `exports/events.jsonl`. Bus health is `http://127.0.0.1:8222`.
 
+The Nuclei image installs templates into `/opt/nuclei-templates`; both profiles select that directory explicitly. The build must list a nonempty HTTP and SSL/TCP catalog with updates disabled before it succeeds. Runtime scans keep `-duc`; use `docker compose build --pull --no-cache nuclei nuclei-net` to refresh the baked-in catalog. If an earlier template failure paused either worker, recreate the repaired containers and use `work resume nuclei` / `work resume nuclei-net` to release pending work. Previously failed tasks still require a new scope to rescan.
+
 ## Event schema
 
 Every tool accepts and emits the same versioned `event.Event`. Version 2 carries explicit endpoint identity, result details, and scan lineage. See the [observation contract](event/SCHEMA.md) for the complete fields, examples, and consumer rules.
